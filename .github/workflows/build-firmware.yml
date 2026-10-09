@@ -1,10 +1,4 @@
-      # --- ここから追記 ---
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      # --- ここまで追記 ---
-name: Build Custom Firmaware
+name: Build Custom Firmware
 
 on:
   push:
@@ -48,7 +42,14 @@ jobs:
       run: |
         mkdir -p qmk_firmware/keyboards/
         cp -rup ./keyboards/* ./qmk_firmware/keyboards/
-        
+
+    # --- [ここを追加] 新しいPython環境でのQMKのバグ（ast.Num問題）を強制修正するステップ ---
+    - name: Patch QMK Python Library for newer Python versions
+      working-directory: ./qmk_firmware
+      run: |
+        sed -i "s/isinstance(node, ast.Num):/isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):/g" lib/python/qmk/math.py
+        sed -i "s/return node.n/return node.value/g" lib/python/qmk/math.py
+
     - name: Compile Custom Firmware
       working-directory: ./qmk_firmware
       run: |
@@ -61,6 +62,7 @@ jobs:
         path: |
           ./qmk_firmware/*.hex
           ./qmk_firmware/*.bin
+          ./qmk_firmware/*.uf2
 
     - name: Upload compiled firmware (tagged release)
       uses: softprops/action-gh-release@v2
@@ -69,3 +71,4 @@ jobs:
         files: |
           ./qmk_firmware/*.hex
           ./qmk_firmware/*.bin
+          ./qmk_firmware/*.uf2
