@@ -1,3 +1,9 @@
+      # --- ここから追記 ---
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      # --- ここまで追記 ---
 name: Build Custom Firmaware
 
 on:
