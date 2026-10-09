@@ -1,6 +1,8 @@
 #pragma once
 
-#define EE_HANDS
+// 左右判定をUSBが挿さっている側（通常は左）で自動判定する設定に変更
+#define SPLIT_USB_DETECT
+
 #define VIAL_KEYBOARD_UID {0xf5, 0xcd, 0x33, 0x0b, 0xb0, 0x86, 0x1b, 0x5f}
 
 // Vial 動的エントリ数(タップダンス / コンボ)
