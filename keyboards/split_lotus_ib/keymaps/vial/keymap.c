@@ -254,9 +254,9 @@ void raw_hid_receive_kb(uint8_t *data, uint8_t length) {
 void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
     uint8_t command_id = data[0]; // 0x07: Set / 0x08: Get
     uint8_t value_id   = data[2]; // vial.json で設定した各項目の "id"
-    uint8_t value_data = data[3]; // UI側から送られてくる値
+    uint8_t value_data = data[4]; // UI側から送られてくる純粋な1バイトの値
 
-    if (command_id == 0x07) {
+    if (command_id == 0x07) { // WebUI側で値を変更し、保存（Set）するとき
         switch (value_id) {
             case 1: cfg.cpi_index     = value_data; apply_cpi(); break;
             case 2: cfg.scroll_index  = value_data; break;
@@ -266,19 +266,18 @@ void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
             case 6: cfg.precision_lock= value_data; break;
             default: break;
         }
-        cfg_sanitize();
-        cfg_save();
+        cfg_sanitize(); // 不正な0や範囲外の値を初期値に丸める
+        cfg_save();     // EEPROMへ即座に永続保存
     } 
-    else if (command_id == 0x08) {
+    else if (command_id == 0x08) { // 画面を開いた時や保存直後に値を読み出す（Get）とき
         switch (value_id) {
-            case 1: data[3] = cfg.cpi_index; break;
-            case 2: data[3] = cfg.scroll_index; break;
-            case 3: data[3] = cfg.accel_enable; break;
-            case 4: data[3] = cfg.accel_curve; break;
-            case 5: data[3] = cfg.precision_div; break;
-            case 6: data[3] = cfg.precision_lock; break;
-            default: data[3] = 0; break;
+            case 1: data[4] = cfg.cpi_index; break;
+            case 2: data[4] = cfg.scroll_index; break;
+            case 3: data[4] = cfg.accel_enable; break;
+            case 4: data[4] = cfg.accel_curve; break;
+            case 5: data[4] = cfg.precision_div; break;
+            case 6: data[4] = cfg.precision_lock; break;
+            default: data[4] = 0; break;
         }
     }
 }
-#endif
