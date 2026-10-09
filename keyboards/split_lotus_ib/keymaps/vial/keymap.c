@@ -657,3 +657,68 @@ void raw_hid_receive_kb(uint8_t *data, uint8_t length) {
         tb_custom_command(data, length);
     }
 }
+
+#ifdef VIA_ENABLE
+#include "via.h"
+
+/* ==================================================================
+ * 1. WebUI（WebHID）からのカスタムコマンドを横取りする処理
+ * ================================================================== */
+void raw_hid_receive_kb(uint8_t *data, uint8_t length) {
+    uint8_t *command_id = &(data[0]);
+
+    // カスタムメニューの値変更（Set/Get）要求が来たら、独自の処理を呼び出して即座に返す
+    if (*command_id == id_custom_set_value || *command_id == id_custom_get_value) {
+        *command_id = id_handled;
+        via_custom_value_command_kb(data, length);
+        raw_hid_send(data, length);
+        return;
+    }
+}
+
+/* ==================================================================
+ * 2. WebUIとキーボード側構造体（cfg）の値を正しく仲介・格納する処理
+ * ================================================================== */
+void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
+    uint8_t command_id = data[0]; // id_custom_set_value または id_custom_get_value
+    uint8_t channel    = data[1]; // 通常は 0
+    uint8_t value_id   = data[2]; // vial.json で設定した各項目の "id"
+    
+    // UI側から送られてくる値、またはUI側へ返す値を正しく 1バイト整数 として受け取る
+    // (アドレスを直接弄らないため、値が数万などの異常値に化けるのを防ぎます)
+    uint8_t value_data = data[3]; 
+
+    switch (command_id) {
+        case id_custom_set_value:
+            // --- WebUIで変更された値をキーボードの cfg 構造体に1バイトで安全に代入 ---
+            switch (value_id) {
+                case 1: cfg.cpi_index     = value_data; apply_cpi(); break; // CPIスロット変更時はセンサーに即反映
+                case 2: cfg.scroll_index  = value_data; break;
+                case 3: cfg.accel_enable  = value_data; break;
+                case 4: cfg.accel_curve   = value_data; break;
+                case 5: cfg.precision_div = value_data; break;
+                case 6: cfg.precision_lock= value_data; break;
+                default: break;
+            }
+            // バリデーションチェックを走らせて範囲外の数値を丸める
+            cfg_sanitize();
+            break;
+
+        case id_custom_get_value:
+            // --- 現在のキーボード側の値を WebUI の画面に表示するために返す ---
+            switch (value_id) {
+                case 1: data[3] = cfg.cpi_index; break;
+                case 2: data[3] = cfg.scroll_index; break;
+                case 3: data[3] = cfg.accel_enable; break;
+                case 4: data[3] = cfg.accel_curve; break;
+                case 5: data[3] = cfg.precision_div; break;
+                case 6: data[3] = cfg.precision_lock; break;
+                default: data[3] = 0; break;
+            }
+            break;
+
+        default:
+            break;
+    }
+}
+#endif
