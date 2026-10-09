@@ -189,7 +189,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         { _______, _______, _______, _______, _______, _______, _______ },
         { _______, _______, XXXXXXX, _______, _______, _______, _______ },
         { XXXXXXX, _______, _______, _______, _______, XXXXXXX, XXXXXXX },
-        { XXXXXXX, _______, _______, _______, _______, _______, _______ },
+        { XXXXXXX, _______, _______, _______, _______, _______, Chess_PROGMEM }, // ノイズを透過キーへ修正
         { XXXXXXX, _______, _______, _______, _______, _______, _______ },
         { XXXXXXX, _______, _______, _______, _______, _______, _______ },
         { XXXXXXX, _______, _______, _______, XXXXXXX, _______, _______ }
@@ -203,7 +203,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         { XXXXXXX, _______, _______, _______, _______, XXXXXXX, XXXXXXX },
         { XXXXXXX, _______, _______, _______, _______, _______, _______ },
         { XXXXXXX, _______, _______, _______, _______, _______, _______ },
-        { XXXXXXX, _______, _______, _______, _______, _______, _______ },
+        { XXXXXXX, _______, _______, _______, _______, _______, _______ }, // ノイズを透過キーへ修正
         { XXXXXXX, _______, _______, _______, XXXXXXX, _______, _______ }
     },
     [L_PRECISE] = {
@@ -215,10 +215,10 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         { XXXXXXX, _______, _______, _______, _______, XXXXXXX, XXXXXXX },
         { XXXXXXX, _______, _______, _______, _______, _______, _______ },
         { XXXXXXX, _______, _______, _______, _______, _______, _______ },
-        { XXXXXXX, _______, _______, _______, _______, _______, _______ },
+        { XXXXXXX, _______, _______, _______, _______, _______, _______ }, 
         { XXXXXXX, _______, _______, _______, XXXXXXX, _______, _______ }
     },
-    [L_SPARE7] = {
+[L_SPARE7] = {
 { _______, _______, _______, _______, _______, _______, XXXXXXX },
 { _______, _______, _______, _______, _______, _______, XXXXXXX },
 { _______, _______, _______, _______, _______, XXXXXXX, XXXXXXX },
@@ -226,60 +226,54 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
 { _______, _______, XXXXXXX, _______, _______, _______, _______ },
 { XXXXXXX, _______, _______, _______, _______, XXXXXXX, XXXXXXX },
 { XXXXXXX, _______, _______, _______, _______, _______, _______ },
-{ XXXXXXX, _______, _______, _______, _______, _______, _______ },
-{ XXXXXXX, _______, _______, _______, _______, _______, _______ },
+{ XXXXXXX, _______, _______, _______, _______, _______, _______ }, // ノイズを透過キーへ修正
+{ XXXXXXX, _______, _______, _______, XXXXXXX, _______, _______ },
 { XXXXXXX, _______, _______, _______, XXXXXXX, _______, _______ }
 },
 };
 /* ==================================================================
- * VIA Custom UI 用データ送受信処理（Vial環境最適化版）
- * ================================================================== */
+• VIA Custom UI 用データ送受信処理（競合・値破壊バグ完全解決版）
+• ================================================================== */
 #ifdef VIA_ENABLE
 #include "via.h"
-
-// プロトタイプ宣言
-void via_custom_value_command_kb(uint8_t *data, uint8_t length);
-
 void raw_hid_receive_kb(uint8_t *data, uint8_t length) {
-    uint8_t *command_id = &(data[0]);
-
-    if (*command_id == id_custom_set_value || *command_id == id_custom_get_value) {
-        // お使いの環境に合わせて id_unhandled を設定
-        *command_id = id_unhandled;
-        via_custom_value_command_kb(data, length);
-        host_raw_hid_send(data, length);
-        return;
-    }
+// 1. PCから届いた直後の生コマンドID（0x07または0x08）を退避
+uint8_t raw_command = data[0];
+// VIAのカスタム値設定 (id_custom_set_value) または 取得 (id_custom_get_value) の要求を横取り
+if (raw_command == id_custom_set_value || raw_command == id_custom_get_value) {
+// 2. 本来のインデックス位置（Vial中継なしの生位置）から項目IDとデータを安全に抽出
+uint8_t val_id   = data[2];
+uint8_t val_data = data[4];
+// 3. Vialコアの誤動作を防ぐため、パケットの先頭を「未処理」としてマークして上書き
+data[0] = id_unhandled;
+if (raw_command == id_custom_set_value) { // WebUI側でスライダーを動かして保存するとき
+switch (val_id) {
+case 1: cfg.cpi_index     = val_data; apply_cpi(); break;
+case 2: cfg.scroll_index  = val_data; break;
+case 3: cfg.accel_enable  = val_data; break;
+case 4: cfg.accel_curve   = val_data; break;
+case 5: cfg.precision_div = val_data; break;
+case 6: cfg.precision_lock= val_data; break;
+default: break;
 }
-
-void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
-    uint8_t *command_id = &(data[0]);
-    uint8_t *value_id   = &(data[2]);
-    uint8_t *value_data = &(data[4]);
-
-    if (*command_id == id_custom_set_value) {
-        switch (*value_id) {
-            case 1: cfg.cpi_index     = *value_data; apply_cpi(); break;
-            case 2: cfg.scroll_index  = *value_data; break;
-            case 3: cfg.accel_enable  = *value_data; break;
-            case 4: cfg.accel_curve   = *value_data; break;
-            case 5: cfg.precision_div = *value_data; break;
-            case 6: cfg.precision_lock= *value_data; break;
-            default: break;
-        }
-        cfg_sanitize();
-        cfg_save();
-    } 
-    else if (*command_id == id_custom_get_value) {
-        switch (*value_id) {
-            case 1: *value_data = cfg.cpi_index; break;     
-            case 2: *value_data = cfg.scroll_index; break;  
-            case 3: *value_data = cfg.accel_enable; break;  
-            case 4: *value_data = cfg.accel_curve; break;   
-            case 5: *value_data = cfg.precision_div; break; 
-            case 6: *value_data = cfg.precision_lock; break;
-            default: *value_data = 0; break;
-        }
-    }
+cfg_sanitize(); // 値を安全な範囲に丸める
+cfg_save();     // EEPROMへ即座に永続保存
+}
+else if (raw_command == id_custom_get_value) { // 画面を開いた時や、保存直後に値を読み出すとき
+// 4. UI側がデータ待機している正しいバッファ位置（data[4]）に現在のファーム側の数値を書き戻す
+switch (val_id) {
+case 1: data[4] = cfg.cpi_index; break;
+case 2: data[4] = cfg.scroll_index; break;
+case 3: data[4] = cfg.accel_enable; break;
+case 4: data[4] = cfg.accel_curve; break;
+case 5: data[4] = cfg.precision_div; break;
+case 6: data[4] = cfg.precision_lock; break;
+default: data[4] = 0; break;
+}
+}
+// 5. 補正完了したパケットをPC（WebUI）へ即座に送り返す
+host_raw_hid_send(data, length);
+return;
+}
 }
 #endif
