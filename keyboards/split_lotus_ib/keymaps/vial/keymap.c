@@ -232,54 +232,52 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
 },
 };
 /* ==================================================================
- * VIA Custom UI 用データ送受信処理（公式完全準拠・メモリ破壊対策版）
+ * VIA Custom UI 用データ送受信処理（公式完全準拠コード）
  * ================================================================== */
 #ifdef VIA_ENABLE
 #include "via.h"
 
-// プロトタイプ宣言（コンパイル警告エラー対策）
+// プロトタイプ宣言
 void via_custom_value_command_kb(uint8_t *data, uint8_t length);
 
 void raw_hid_receive_kb(uint8_t *data, uint8_t length) {
-    uint8_t command_id = *data; // 先頭のコマンドIDを取得
+    uint8_t *command_id = &(data[0]);
 
-    // VIAのカスタム値設定 (0x07) または 取得 (0x08) コマンドを横取りする
-    if (command_id == 0x07 || command_id == 0x08) {
-        // Vialの古いvia.cが対応していないため、この中で直接割り込んで独自処理を走らせる
+    if (*command_id == id_custom_set_value || *command_id == id_custom_get_value) {
+        *command_id = id_handled;
         via_custom_value_command_kb(data, length);
-        host_raw_hid_send(data, length);
+        raw_hid_send(data, length);
         return;
     }
 }
 
 void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
-    uint8_t command_id = *data;           // 0x07: Set(保存) / 0x08: Get(読み出し)
-    uint8_t value_id   = *(data + 2);     // 3バイト目：vial.jsonで定義したコントロールの "id"
-    uint8_t value_data = *(data + 3);     // 4バイト目：UI側から送られてくる1バイトの純粋な設定値
+    uint8_t *command_id = &(data[0]);
+    uint8_t *value_id   = &(data[2]);
+    uint8_t *value_data = &(data[3]);
 
-    if (command_id == 0x07) { // WebUI側で値を変更し、キーボードへ保存（Set）するとき
-        switch (value_id) {
-            case 1: cfg.cpi_index     = value_data; apply_cpi(); break;
-            case 2: cfg.scroll_index  = value_data; break;
-            case 3: cfg.accel_enable  = value_data; break;
-            case 4: cfg.accel_curve   = value_data; break;
-            case 5: cfg.precision_div = value_data; break;
-            case 6: cfg.precision_lock= value_data; break;
+    if (*command_id == id_custom_set_value) {
+        switch (*value_id) {
+            case 1: cfg.cpi_index     = *value_data; apply_cpi(); break;
+            case 2: cfg.scroll_index  = *value_data; break;
+            case 3: cfg.accel_enable  = *value_data; break;
+            case 4: cfg.accel_curve   = *value_data; break;
+            case 5: cfg.precision_div = *value_data; break;
+            case 6: cfg.precision_lock= *value_data; break;
             default: break;
         }
-        cfg_sanitize(); // 値を安全な範囲に丸める
-        cfg_save();     // 左手側のEEPROMへ保存する
+        cfg_sanitize();
+        cfg_save();
     } 
-    else if (command_id == 0x08) { // 画面を開いた瞬間や、保存完了直後に値を画面へ送り返す（Get）とき
-        // VIAプロトコル規格に基づき、4バイト目の位置（data + 3）に現在のファーム側の数値を上書きして返却する
-        switch (value_id) {
-            case 1: *(data + 3) = cfg.cpi_index; break;     
-            case 2: *(data + 3) = cfg.scroll_index; break;  
-            case 3: *(data + 3) = cfg.accel_enable; break;  
-            case 4: *(data + 3) = cfg.accel_curve; break;   
-            case 5: *(data + 3) = cfg.precision_div; break; 
-            case 6: *(data + 3) = cfg.precision_lock; break;
-            default: *(data + 3) = 0; break;
+    else if (*command_id == id_custom_get_value) {
+        switch (*value_id) {
+            case 1: *value_data = cfg.cpi_index; break;     
+            case 2: *value_data = cfg.scroll_index; break;  
+            case 3: *value_data = cfg.accel_enable; break;  
+            case 4: *value_data = cfg.accel_curve; break;   
+            case 5: *value_data = cfg.precision_div; break; 
+            case 6: *value_data = cfg.precision_lock; break;
+            default: *value_data = 0; break;
         }
     }
 }
