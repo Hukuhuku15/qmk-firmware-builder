@@ -241,7 +241,8 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
 void via_custom_value_command_kb(uint8_t *data, uint8_t length);
 
 void raw_hid_receive_kb(uint8_t *data, uint8_t length) {
-    uint8_t command_id = data[0]; // 配列の0番目（コマンドID）を取得
+    // data[0] の中身（コマンドID）を取得
+    uint8_t command_id = *data; 
 
     // 0x07 (Set) または 0x08 (Get) コマンドが来たらカスタム値を処理
     if (command_id == 0x07 || command_id == 0x08) {
@@ -252,9 +253,9 @@ void raw_hid_receive_kb(uint8_t *data, uint8_t length) {
 }
 
 void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
-    uint8_t command_id = data[0]; // 0x07: Set / 0x08: Get
-    uint8_t value_id   = data[2]; // vial.json で設定した各項目の "id" (3バイト目)
-    uint8_t value_data = data[4]; // UI側から送られてくる純粋な1バイトの値 (5バイト目)
+    uint8_t command_id = *data;           // data[0] (0x07: Set / 0x08: Get)
+    uint8_t value_id   = *(data + 2);     // data[2] (vial.jsonで指定した項目のid)
+    uint8_t value_data = *(data + 4);     // data[4] (UI側から送られてくる1バイトの値)
 
     if (command_id == 0x07) { // WebUI側で値を変更し、保存（Set）するとき
         switch (value_id) {
@@ -271,13 +272,13 @@ void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
     } 
     else if (command_id == 0x08) { // 画面を開いた時や保存直後に値を読み出す（Get）とき
         switch (value_id) {
-            case 1: data[4] = cfg.cpi_index; break;
-            case 2: data[4] = cfg.scroll_index; break;
-            case 3: data[4] = cfg.accel_enable; break;
-            case 4: data[4] = cfg.accel_curve; break;
-            case 5: data[4] = cfg.precision_div; break;
-            case 6: data[4] = cfg.precision_lock; break;
-            default: data[4] = 0; break;
+            case 1: *(data + 4) = cfg.cpi_index; break;     // data[4] に現在の値を書き戻す
+            case 2: *(data + 4) = cfg.scroll_index; break;  // data[4] に現在の値を書き戻す
+            case 3: *(data + 4) = cfg.accel_enable; break;  // data[4] に現在の値を書き戻す
+            case 4: *(data + 4) = cfg.accel_curve; break;   // data[4] に現在の値を書き戻す
+            case 5: *(data + 4) = cfg.precision_div; break; // data[4] に現在の値を書き戻す
+            case 6: *(data + 4) = cfg.precision_lock; break;// data[4] に現在の値を書き戻す
+            default: *(data + 4) = 0; break;
         }
     }
 }
