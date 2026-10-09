@@ -232,7 +232,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
 },
 };
 /* ==================================================================
- * VIA Custom UI 用データ送受信処理（公式完全準拠コード）
+ * VIA Custom UI 用データ送受信処理（Vial環境最適化版）
  * ================================================================== */
 #ifdef VIA_ENABLE
 #include "via.h"
@@ -244,9 +244,10 @@ void raw_hid_receive_kb(uint8_t *data, uint8_t length) {
     uint8_t *command_id = &(data[0]);
 
     if (*command_id == id_custom_set_value || *command_id == id_custom_get_value) {
-        *command_id = id_handled;
+        // お使いの環境に合わせて id_unhandled を設定
+        *command_id = id_unhandled;
         via_custom_value_command_kb(data, length);
-        raw_hid_send(data, length);
+        host_raw_hid_send(data, length);
         return;
     }
 }
@@ -254,7 +255,7 @@ void raw_hid_receive_kb(uint8_t *data, uint8_t length) {
 void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
     uint8_t *command_id = &(data[0]);
     uint8_t *value_id   = &(data[2]);
-    uint8_t *value_data = &(data[3]);
+    uint8_t *value_data = &(data[4]);
 
     if (*command_id == id_custom_set_value) {
         switch (*value_id) {
