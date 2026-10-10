@@ -59,7 +59,7 @@ jobs:
         echo "=== Building LEFT side ==="
         make all EXTRAFLAGS+="-DINIT_EE_HANDS_LEFT"
         
-        # 左用ビルド成果物のファイル名末尾に _left を付与して「別フォルダ」へ退避（衝突回避のため）
+        # 左用ビルド成果物のファイル名末尾に _left を付与して「別フォルダ」へ退避
         mkdir -p ../output_artifacts
         for f in *.hex *.bin *.uf2; do
           if [ -f "$f" ]; then
