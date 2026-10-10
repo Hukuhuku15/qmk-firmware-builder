@@ -22,7 +22,7 @@ jobs:
     
     - name: Clone QMK fork
       run: | 
-        git clone --no-checkout https://github.com/$QMK_REPO.git --depth 1 --branch $QMK_BRANCH ./qmk_firmware
+        git clone --no-checkout https://github.com --depth 1 --branch $QMK_BRANCH ./qmk_firmware
 
     - name: Determine & Checkout relevant keyboards
       working-directory: ./qmk_firmware
@@ -43,32 +43,51 @@ jobs:
         mkdir -p qmk_firmware/keyboards/
         cp -rup ./keyboards/* ./qmk_firmware/keyboards/
 
-    # --- [ここを追加] 新しいPython環境でのQMKのバグ（ast.Num問題）を強制修正するステップ ---
     - name: Patch QMK Python Library for newer Python versions
       working-directory: ./qmk_firmware
       run: |
         sed -i "s/isinstance(node, ast.Num):/isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):/g" lib/python/qmk/math.py
         sed -i "s/return node.n/return node.value/g" lib/python/qmk/math.py
 
-    - name: Compile Custom Firmware
+    - name: Compile Custom Firmware (Left & Right)
       working-directory: ./qmk_firmware
       run: |
-        make all
+        echo "=== Building LEFT side ==="
+        make all OPT_DEFS+="-DINIT_EE_HANDS_LEFT"
+        
+        # 左用ビルド成果物のファイル名末尾に _left を付与して退避
+        for f in *.hex *.bin *.uf2; do
+          [ -f "$f" ] && mv "$f" "${f%.*}_left.${f##*.}"
+        done
+
+        echo "=== Building RIGHT side ==="
+        make all OPT_DEFS+="-DINIT_EE_HANDS_RIGHT"
+        
+        # 右用ビルド成果物のファイル名末尾に _right を付与して退避
+        for f in *.hex *.bin *.uf2; do
+          [ -f "$f" ] && [[ "$f" != *_left.* ]] && mv "$f" "${f%.*}_right.${f##*.}"
+        done
 
     - name: Upload compiled firmware (build artifact)
       uses: actions/upload-artifact@v4
       with:
         name: Firmware Files
         path: |
-          ./qmk_firmware/*.hex
-          ./qmk_firmware/*.bin
-          ./qmk_firmware/*.uf2
+          ./qmk_firmware/*_left.hex
+          ./qmk_firmware/*_left.bin
+          ./qmk_firmware/*_left.uf2
+          ./qmk_firmware/*_right.hex
+          ./qmk_firmware/*_right.bin
+          ./qmk_firmware/*_right.uf2
 
     - name: Upload compiled firmware (tagged release)
       uses: softprops/action-gh-release@v2
       if: startsWith(github.ref, 'refs/tags/')
       with:
         files: |
-          ./qmk_firmware/*.hex
-          ./qmk_firmware/*.bin
-          ./qmk_firmware/*.uf2
+          ./qmk_firmware/*_left.hex
+          ./qmk_firmware/*_left.bin
+          ./qmk_firmware/*_left.uf2
+          ./qmk_firmware/*_right.hex
+          ./qmk_firmware/*_right.bin
+          ./qmk_firmware/*_right.uf2
