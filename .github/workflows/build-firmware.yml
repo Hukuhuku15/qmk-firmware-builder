@@ -22,7 +22,7 @@ jobs:
     
     - name: Clone QMK fork
       run: | 
-        git clone --no-checkout https://github.com --depth 1 --branch $QMK_BRANCH ./qmk_firmware
+        git clone --no-checkout https://github.com/$QMK_REPO.git --depth 1 --branch $QMK_BRANCH ./qmk_firmware
 
     - name: Determine & Checkout relevant keyboards
       working-directory: ./qmk_firmware
@@ -43,7 +43,7 @@ jobs:
         mkdir -p qmk_firmware/keyboards/
         cp -rup ./keyboards/* ./qmk_firmware/keyboards/
 
-    # --- 新しいPython環境でのQMKのバグ（ast.Num問題）を強制修正するステップ ---
+    # --- [ここを追加] 新しいPython環境でのQMKのバグ（ast.Num問題）を強制修正するステップ ---
     - name: Patch QMK Python Library for newer Python versions
       working-directory: ./qmk_firmware
       run: |
