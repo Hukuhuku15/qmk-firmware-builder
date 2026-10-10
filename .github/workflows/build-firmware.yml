@@ -91,3 +91,4 @@ jobs:
           ./qmk_firmware/*_right.hex
           ./qmk_firmware/*_right.bin
           ./qmk_firmware/*_right.uf2
+
