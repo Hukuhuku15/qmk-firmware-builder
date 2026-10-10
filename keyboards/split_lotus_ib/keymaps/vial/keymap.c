@@ -55,7 +55,7 @@ enum custom_keycodes {
  * 設定(EEPROMに保存。Vialのカスタムメニュー/キーから変更)
  * ------------------------------------------------------------------ */
 #define SLOT_COUNT 7
-#define CFG_VERSION 3
+#define CFG_VERSION 4
 
 typedef struct __attribute__((packed)) {
     uint8_t  version;
