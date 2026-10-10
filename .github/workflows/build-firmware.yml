@@ -22,7 +22,7 @@ jobs:
     
     - name: Clone QMK fork
       run: | 
-        git clone --no-checkout https://github.com/$QMK_REPO.git --depth 1 --branch $QMK_BRANCH ./qmk_firmware
+        git clone --no-checkout https://github.com --depth 1 --branch $QMK_BRANCH ./qmk_firmware
 
     - name: Determine & Checkout relevant keyboards
       working-directory: ./qmk_firmware
@@ -43,7 +43,7 @@ jobs:
         mkdir -p qmk_firmware/keyboards/
         cp -rup ./keyboards/* ./qmk_firmware/keyboards/
 
-    # --- [ここを追加] 新しいPython環境でのQMKのバグ（ast.Num問題）を強制修正するステップ ---
+    # --- 新しいPython環境でのQMKのバグ（ast.Num問題）を強制修正するステップ ---
     - name: Patch QMK Python Library for newer Python versions
       working-directory: ./qmk_firmware
       run: |
@@ -53,21 +53,35 @@ jobs:
     - name: Compile Custom Firmware (Left & Right)
       working-directory: ./qmk_firmware
       run: |
+        # 事前にビルド環境をクリーンアップ
+        make clean
+
         echo "=== Building LEFT side ==="
         make all EXTRAFLAGS+="-DINIT_EE_HANDS_LEFT"
         
-        # 左用ビルド成果物のファイル名末尾に _left を付与して退避
+        # 左用ビルド成果物のファイル名末尾に _left を付与して「別フォルダ」へ退避（衝突回避のため）
+        mkdir -p ../output_artifacts
         for f in *.hex *.bin *.uf2; do
-          [ -f "$f" ] && mv "$f" "${f%.*}_left.${f##*.}"
+          if [ -f "$f" ]; then
+            mv "$f" "../output_artifacts/${f%.*}_left.${f##*.}"
+          fi
         done
+
+        # 次のビルドのためにオブジェクトファイルを完全にクリーンアップ
+        make clean
 
         echo "=== Building RIGHT side ==="
         make all EXTRAFLAGS+="-DINIT_EE_HANDS_RIGHT"
         
-        # 右用ビルド成果物のファイル名末尾に _right を付与して退避
+        # 右用ビルド成果物のファイル名末尾に _right を付与して「別フォルダ」へ退避
         for f in *.hex *.bin *.uf2; do
-          [ -f "$f" ] && [[ "$f" != *_left.* ]] && mv "$f" "${f%.*}_right.${f##*.}"
+          if [ -f "$f" ]; then
+            mv "$f" "../output_artifacts/${f%.*}_right.${f##*.}"
+          fi
         done
+
+        # 成果物を本来の場所（後続のステップが見にいく場所）に戻す
+        mv ../output_artifacts/* .
 
     - name: Upload compiled firmware (build artifact)
       uses: actions/upload-artifact@v4
