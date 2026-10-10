@@ -81,9 +81,8 @@ typedef struct __attribute__((packed)) {
 #define INV_LY     0x02 // 左ボール Y反転
 #define INV_RX     0x04 // 右ボール X反転
 #define INV_RY     0x08 // 右ボール Y反転
-#define INV_SWAP   0x10 // センサーの左右を入れ替える(ONで 左ボール=もう一方のセンサー)
-#define SCR_INV_H  0x20 // スクロール左右反転
-#define SCR_INV_V  0x40 // スクロール上下反転(OFF:ボールを奥へ転がすと上スクロール)
+#define SCR_INV_H  0x10 // スクロール左右反転
+#define SCR_INV_V  0x20 // スクロール上下反転(OFF:ボールを奥へ転がすと上スクロール)
 
 _Static_assert(sizeof(trackball_cfg_t) <= EECONFIG_USER_DATA_SIZE, "EECONFIG_USER_DATA_SIZE is too small");
 
@@ -107,7 +106,7 @@ static void cfg_defaults(void) {
         .rot_left         = 18,   // 90度(従来の ROTATION_90 相当)
         .rot_right        = 18,   // 90度(従来の ROTATION_90_RIGHT 相当)
         // 左右入れ替えON。右ボール側(=従来の左センサー)に従来の INVERT_X / INVERT_Y を適用
-        .invert_flags     = INV_SWAP | INV_RX | INV_RY,
+        .invert_flags = 0,
     };
     cfg = d;
 }
@@ -151,10 +150,9 @@ static void cfg_load(void) {
     }
 }
 
-// 右ボールのCPIをセンサーに反映(分割キーボードでは相手側へも自動で伝わる)
 static void apply_cpi(void) {
-    // 右ボール(カーソル)側のセンサーへ。入れ替えON時は QMK から見て『左』側のセンサーが右ボールになる
-    pointing_device_set_cpi_on_side((cfg.invert_flags & INV_SWAP) != 0, cfg.cpi[cfg.cpi_index]);
+    pointing_device_set_cpi_on_side(false,
+        cfg.cpi[cfg.cpi_index]);
 }
 
 void keyboard_post_init_user(void) {
@@ -495,11 +493,7 @@ static inline int8_t clamp8(int16_t v) {
 
 report_mouse_t pointing_device_task_combined_user(report_mouse_t left_report, report_mouse_t right_report) {
     // ---- 左右入れ替え(センサー → 『左ボール/右ボール』の役割) ----
-    if (cfg.invert_flags & INV_SWAP) {
-        report_mouse_t tmp = left_report;
-        left_report        = right_report;
-        right_report       = tmp;
-    }
+
     int16_t lx = left_report.x, ly = left_report.y;
     int16_t rx = right_report.x, ry = right_report.y;
 
@@ -609,7 +603,6 @@ enum trackball_value_id {
     id_invert_ly           = 15, // toggle
     id_invert_rx           = 16, // toggle
     id_invert_ry           = 17, // toggle
-    id_swap_lr             = 18, // toggle: センサーの左右入れ替え
     id_scroll_inv_h        = 19, // toggle: スクロール左右反転
     id_scroll_inv_v        = 20, // toggle: スクロール上下反転
 };
@@ -724,10 +717,7 @@ static void tb_set_value(uint8_t *d) {
         case id_invert_ry:
             set_flag(INV_RY, v[0]);
             break;
-        case id_swap_lr:
-            set_flag(INV_SWAP, v[0]);
-            apply_cpi();
-            break;
+
         case id_scroll_inv_h:
             set_flag(SCR_INV_H, v[0]);
             break;
@@ -795,9 +785,7 @@ static void tb_get_value(uint8_t *d) {
         case id_invert_ry:
             wr8(v, (cfg.invert_flags & INV_RY) ? 1 : 0);
             break;
-        case id_swap_lr:
-            wr8(v, (cfg.invert_flags & INV_SWAP) ? 1 : 0);
-            break;
+
         case id_scroll_inv_h:
             wr8(v, (cfg.invert_flags & SCR_INV_H) ? 1 : 0);
             break;
