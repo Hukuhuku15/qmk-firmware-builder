@@ -11,3 +11,4 @@ SRC += paw3222.c
 
 # paw3222.c を有効化(Auto-KDK の Web ビルドが付与しているフラグ相当)
 OPT_DEFS += -DAUTO_KDK_TRACKBALL_ENABLED
+OPT_DEFS += -DINIT_EE_HANDS_LEFT
