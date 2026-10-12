@@ -1,0 +1,13 @@
+VIA_ENABLE = yes
+VIAL_ENABLE = yes
+VIAL_INSECURE = yes
+
+# Vial のタップダンス / コンボ
+TAP_DANCE_ENABLE = yes
+COMBO_ENABLE = yes
+
+POINTING_DEVICE_DRIVER = custom
+SRC += paw3222.c
+
+# paw3222.c を有効化(Auto-KDK の Web ビルドが付与しているフラグ相当)
+OPT_DEFS += -DAUTO_KDK_TRACKBALL_ENABLED
