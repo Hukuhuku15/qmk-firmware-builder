@@ -7,6 +7,7 @@ on:
 env:
   QMK_REPO: vial-kb/vial-qmk
   QMK_BRANCH: vial
+  KB_TARGET: split_lotus_ib:vial
 
 jobs:
   build:
@@ -19,9 +20,9 @@ jobs:
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
-    
+
     - name: Clone QMK fork
-      run: | 
+      run: |
         git clone --no-checkout https://github.com/$QMK_REPO.git --depth 1 --branch $QMK_BRANCH ./qmk_firmware
 
     - name: Determine & Checkout relevant keyboards
@@ -33,54 +34,53 @@ jobs:
         printf '!/keyboards/**/keymaps\n' >> .git/info/sparse-checkout
         git checkout $QMK_BRANCH --
 
+    # qmk setup は使わない。vial-qmk のフォルダを明示的に QMK_HOME に指定する
     - name: Set Up QMK
       working-directory: ./qmk_firmware
       run: |
-        qmk setup -y
+        git submodule update --init --recursive --depth 1
+        pip3 install -r requirements.txt || true
+        qmk config user.qmk_home=$PWD
+        echo "QMK_HOME=$PWD" >> $GITHUB_ENV
 
     - name: Copy keymap
       run: |
         mkdir -p qmk_firmware/keyboards/
         cp -rup ./keyboards/* ./qmk_firmware/keyboards/
 
-    # --- [ここを追加] 新しいPython環境でのQMKのバグ（ast.Num問題）を強制修正するステップ ---
+    # 新しいPython環境でのQMKのバグ（ast.Num問題）を修正
     - name: Patch QMK Python Library for newer Python versions
       working-directory: ./qmk_firmware
       run: |
-        sed -i "s/isinstance(node, ast.Num):/isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):/g" lib/python/qmk/math.py
-        sed -i "s/return node.n/return node.value/g" lib/python/qmk/math.py
+        sed -i "s/isinstance(node, ast.Num):/isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):/g" lib/python/qmk/math.py || true
+        sed -i "s/return node.n/return node.value/g" lib/python/qmk/math.py || true
 
     - name: Compile Custom Firmware (Left & Right)
       working-directory: ./qmk_firmware
       run: |
-        # 事前にビルド環境をクリーンアップ
-        make clean
-
-        echo "=== Building LEFT side ==="
-        make all EXTRAFLAGS+="-DINIT_EE_HANDS_LEFT"
-        
-        # 左用ビルド成果物のファイル名末尾に _left を付与して「別フォルダ」へ退避
+        set -e
+        export QMK_HOME=$PWD
         mkdir -p ../output_artifacts
+
+        make clean
+        echo "=== Building LEFT side ==="
+        make $KB_TARGET EXTRAFLAGS+="-DINIT_EE_HANDS_LEFT"
         for f in *.hex *.bin *.uf2; do
           if [ -f "$f" ]; then
             mv "$f" "../output_artifacts/${f%.*}_left.${f##*.}"
           fi
         done
 
-        # 次のビルドのためにオブジェクトファイルを完全にクリーンアップ
         make clean
-
         echo "=== Building RIGHT side ==="
-        make all EXTRAFLAGS+="-DINIT_EE_HANDS_RIGHT"
-        
-        # 右用ビルド成果物のファイル名末尾に _right を付与して「別フォルダ」へ退避
+        make $KB_TARGET EXTRAFLAGS+="-DINIT_EE_HANDS_RIGHT"
         for f in *.hex *.bin *.uf2; do
           if [ -f "$f" ]; then
             mv "$f" "../output_artifacts/${f%.*}_right.${f##*.}"
           fi
         done
 
-        # 成果物を本来の場所（後続のステップが見にいく場所）に戻す
+        ls -l ../output_artifacts
         mv ../output_artifacts/* .
 
     - name: Upload compiled firmware (build artifact)
