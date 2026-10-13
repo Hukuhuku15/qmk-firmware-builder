@@ -1,11 +1,7 @@
-
-Keymap
- · 
-C
 #include QMK_KEYBOARD_H
 #include <stdlib.h>
 #include <string.h>
- 
+
 /* ------------------------------------------------------------------
  * レイヤー定義
  *   0〜3  : 現行の .vil から取り込んだレイヤー
@@ -31,7 +27,7 @@ enum layers {
     L_TDG_DHOLD,
     LAYER_TOTAL, // = 12 (config.h の DYNAMIC_KEYMAP_LAYER_COUNT と合わせる)
 };
- 
+
 /* ------------------------------------------------------------------
  * カスタムキーコード(vial.json の customKeycodes と同じ順序)
  * ------------------------------------------------------------------ */
@@ -46,7 +42,7 @@ enum custom_keycodes {
     RINV_Y,           // 右ボール Y軸反転(トグル)
     TDG,              // ジェスチャータップ(動作表レイヤー8〜11を呼び出す)
 };
- 
+
 /* ------------------------------------------------------------------
  * 調整値(コンパイル時の定数。実行中に変えたいものは設定構造体=Vialメニュー側)
  * ------------------------------------------------------------------ */
@@ -55,19 +51,19 @@ enum custom_keycodes {
 #define AUTO_LAYER_ACTIVITY_RESET_MS 100 // この時間止まったら累積をリセット
 #define AUTO_LAYER_LOCKOUT_MS 300        // 打鍵直後はレイヤー自動ONを抑止(手の接触対策)
 #define AUTO_LAYER_NONE 255              // 自動レイヤーなし
- 
+
 // --- 精密レイヤー ---
 #define PRECISION_AXIS_DECIDE 3       // 縦横どちらかを判定するのに必要な移動量
 #define PRECISION_AXIS_RELEASE_MS 150 // この時間止まったら軸ロック解除
- 
+
 // --- 加速の速さ測定窓 ---
 #define ACCEL_WINDOW_MS 8
- 
+
 // --- スクロールの縦横のみ ---
 #define SCRAXIS_WINDOW_MS 40 // 判定の窓
 #define SCRAXIS_HOLD_MS 250  // ロックしてから再判定するまで
 #define SCRAXIS_IDLE_MS 100  // この時間動きがなければロック解除
- 
+
 // --- ジェスチャー ---
 #define GESTURE_IDLE_MS 150       // この時間動きがなければ距離の累積を捨てる
 #define GESTURE_SPEED_WINDOW_MS 40 // 速さの測定窓
@@ -76,20 +72,20 @@ enum custom_keycodes {
 #define GESTURE_ROW_SLOW 0        // ジェスチャー表の行(ゆっくり)
 #define GESTURE_ROW_FAST 1        // ジェスチャー表の行(速い)
 #define GESTURE_COL_BASE 1        // 列の起点。+0:上 +1:下 +2:左 +3:右
- 
+
 // --- TDG(ジェスチャータップ) ---
 #define TDG_SLOTS 8 // 同時に処理できるキー数
- 
+
 // --- ボールの動作 ---
 enum ball_mode { MODE_MOUSE = 0, MODE_SCROLL = 1, MODE_GESTURE = 2 };
- 
+
 /* ------------------------------------------------------------------
  * 設定(EEPROMに保存。Vialのカスタムメニュー/キーから変更)
  * ------------------------------------------------------------------ */
 #define SLOT_COUNT 7
 #define CPI_Q_STEP 38 // センサーのCPI刻み(PAW3222: 16〜127 × 38)
 #define CFG_VERSION 5
- 
+
 typedef struct __attribute__((packed)) {
     uint8_t  version;
     uint8_t  cpi_index;        // 現在のCPIスロット(0〜6)
@@ -124,7 +120,7 @@ typedef struct __attribute__((packed)) {
     uint8_t  tdg_term;         // TDGの長押し/次のタップを待つ時間(×10ms)
     uint8_t  reserved[18];
 } trackball_cfg_t;
- 
+
 #define INV_LX        0x01 // 左ボール X反転
 #define INV_LY        0x02 // 左ボール Y反転
 #define INV_RX        0x04 // 右ボール X反転
@@ -133,12 +129,12 @@ typedef struct __attribute__((packed)) {
 #define SCR_INV_H     0x20 // スクロール左右反転
 #define SCR_INV_V     0x40 // スクロール上下反転(OFF:ボールを奥へ転がすと上スクロール)
 #define SCR_AXIS_ONLY 0x80 // スクロールを縦横のみにする(斜めを検出しない)
- 
+
 _Static_assert(sizeof(trackball_cfg_t) <= EECONFIG_USER_DATA_SIZE, "EECONFIG_USER_DATA_SIZE is too small");
- 
+
 static trackball_cfg_t cfg;
 static trackball_cfg_t cfg_saved; // EEPROMに書いた最後の内容(変更検出用)
- 
+
 static void cfg_defaults(void) {
     const trackball_cfg_t d = {
         .version          = CFG_VERSION,
@@ -176,12 +172,12 @@ static void cfg_defaults(void) {
     };
     cfg = d;
 }
- 
+
 static void cfg_save(void) {
     cfg_saved = cfg;
     eeconfig_update_user_datablock(&cfg, 0, sizeof(cfg));
 }
- 
+
 // 範囲外の値を丸める(EEPROM破損・Vialからの不正値対策)
 static void cfg_sanitize(void) {
     if (cfg.cpi_index >= SLOT_COUNT) cfg.cpi_index = 1;
@@ -221,7 +217,7 @@ static void cfg_sanitize(void) {
         if (cfg.scroll_div[i] < 1) cfg.scroll_div[i] = 1;
     }
 }
- 
+
 static void cfg_load(void) {
     trackball_cfg_t tmp;
     if (eeconfig_is_user_datablock_valid() && eeconfig_read_user_datablock(&tmp, 0, sizeof(tmp)) == sizeof(tmp) && tmp.version == CFG_VERSION) {
@@ -233,7 +229,7 @@ static void cfg_load(void) {
         cfg_save();
     }
 }
- 
+
 // マウス動作のボールのCPIをセンサーへ反映(分割キーボードでは相手側へも自動で伝わる)
 //   マウス動作でないボールのCPIは触らない(センサーの初期値のまま)
 //   r=0:左ボール r=1:右ボール。入れ替えON時は QMK から見て左右が逆のセンサーになる
@@ -248,13 +244,13 @@ static void apply_cpi(void) {
         pointing_device_set_cpi_on_side(qmk_left, (uint16_t)cfg.cpi_q[cfg.cpi_index] * CPI_Q_STEP);
     }
 }
- 
+
 /* ------------------------------------------------------------------
  * キーマップ(matrix 形式 [row][col]。存在しない位置は XXXXXXX)
  * ------------------------------------------------------------------ */
 #define TRNS_ROW { _______, _______, _______, _______, _______, _______, _______ }
 #define TRNS_LAYER { TRNS_ROW, TRNS_ROW, TRNS_ROW, TRNS_ROW, TRNS_ROW, TRNS_ROW, TRNS_ROW, TRNS_ROW, TRNS_ROW, TRNS_ROW }
- 
+
 const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     [L_BASE] = {
         { KC_ESC,  TG(1),          TD(2),   TD(3),            TD(4),   TD(5),            XXXXXXX },
@@ -314,20 +310,20 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     [L_TDG_DTAP]  = TRNS_LAYER,
     [L_TDG_DHOLD] = TRNS_LAYER,
 };
- 
- 
+
+
 /* ------------------------------------------------------------------
  * ボールごとの状態(0:左 1:右)
  * ------------------------------------------------------------------ */
 typedef struct {
     int32_t fx, fy; // 端数の持ち越し(1024 = 1カウント)
 } rot_frac_t;
- 
+
 typedef struct {
     uint16_t sum;
     uint32_t last;
 } activity_t;
- 
+
 typedef struct {
     // 自動レイヤー判定
     activity_t act;
@@ -357,20 +353,20 @@ typedef struct {
     uint32_t g_last_motion, g_spd_start;
     uint32_t g_spd_sum, g_spd; // 直近の速さ(カウント/秒)
 } ball_t;
- 
+
 static ball_t ball[2];
- 
+
 static void balls_init(void) {
     memset(ball, 0, sizeof(ball));
     for (uint8_t i = 0; i < 2; i++) {
         ball[i].accel_gain_q10 = 1024;
     }
 }
- 
+
 static inline int8_t clamp8(int16_t v) {
     return v > 127 ? 127 : (v < -127 ? -127 : (int8_t)v);
 }
- 
+
 /* ------------------------------------------------------------------
  * 自動レイヤー(ボールごとに番号を設定可)
  * ------------------------------------------------------------------ */
@@ -378,7 +374,7 @@ static uint8_t  auto_cur         = AUTO_LAYER_NONE; // 現在ONにしている�
 static uint32_t auto_timer       = 0;
 static bool     lockout_active   = false;
 static uint32_t lockout_timer    = 0;
- 
+
 static void auto_layer_enable(uint8_t layer) {
     if (layer == AUTO_LAYER_NONE) {
         return;
@@ -392,14 +388,14 @@ static void auto_layer_enable(uint8_t layer) {
     }
     auto_timer = timer_read32();
 }
- 
+
 static void auto_layer_disable(void) {
     if (auto_cur != AUTO_LAYER_NONE) {
         layer_off(auto_cur);
         auto_cur = AUTO_LAYER_NONE;
     }
 }
- 
+
 // 動きを累積し、閾値を超えたら true
 static bool activity_update(activity_t *a, int16_t x, int16_t y) {
     if (x == 0 && y == 0) {
@@ -416,7 +412,7 @@ static bool activity_update(activity_t *a, int16_t x, int16_t y) {
     }
     return a->sum >= AUTO_LAYER_THRESHOLD;
 }
- 
+
 // このキーを押しても自動レイヤーを解除しないか
 static bool key_keeps_auto_layer(uint16_t keycode, keyrecord_t *record) {
     // マウスボタン・ホイール等
@@ -447,7 +443,7 @@ static bool key_keeps_auto_layer(uint16_t keycode, keyrecord_t *record) {
     uint8_t layer = layer_switch_get_layer(pos);
     return layer == L_PRECISE || (auto_cur != AUTO_LAYER_NONE && layer == auto_cur) || (layer != L_BASE && (layer == cfg.auto_layer_left || layer == cfg.auto_layer_right));
 }
- 
+
 /* ------------------------------------------------------------------
  * TDG(ジェスチャータップ)
  *   TDGを置いたキーと同じ位置にある、レイヤー8〜11のキーを呼び出す
@@ -455,21 +451,21 @@ static bool key_keeps_auto_layer(uint16_t keycode, keyrecord_t *record) {
  *   空(KC_NO / 透過)の動作は「未割り当て」: 長押し・ダブルが全て空なら普通のキーと同じ速さで動く
  * ------------------------------------------------------------------ */
 enum { TDG_FREE = 0, TDG_PRESS1, TDG_WAIT2, TDG_PRESS2, TDG_HELD };
- 
+
 typedef struct {
     uint8_t  state;
     keypos_t pos;
     uint32_t timer;
     uint16_t held; // 押しっぱなしにしているキー
 } tdg_t;
- 
+
 static tdg_t tdg[TDG_SLOTS];
- 
+
 static uint16_t tdg_kc(keypos_t pos, uint8_t layer) {
     uint16_t kc = keymap_key_to_keycode(layer, pos);
     return kc > KC_TRNS ? kc : KC_NO; // KC_NO(0) と KC_TRNS(1) は未割り当て
 }
- 
+
 static tdg_t *tdg_find(keypos_t pos, uint8_t state) {
     for (uint8_t i = 0; i < TDG_SLOTS; i++) {
         if (tdg[i].state == state && tdg[i].pos.row == pos.row && tdg[i].pos.col == pos.col) {
@@ -478,13 +474,13 @@ static tdg_t *tdg_find(keypos_t pos, uint8_t state) {
     }
     return NULL;
 }
- 
+
 static void tdg_tap(uint16_t kc) {
     if (kc != KC_NO) {
         tap_code16(kc);
     }
 }
- 
+
 static void tdg_hold(tdg_t *t, uint16_t kc) {
     if (kc != KC_NO) {
         register_code16(kc);
@@ -494,7 +490,7 @@ static void tdg_hold(tdg_t *t, uint16_t kc) {
         t->state = TDG_FREE;
     }
 }
- 
+
 // 次のタップ待ちのものを、今のキー(タップ)として確定する
 static void tdg_flush_wait(void) {
     for (uint8_t i = 0; i < TDG_SLOTS; i++) {
@@ -504,7 +500,7 @@ static void tdg_flush_wait(void) {
         }
     }
 }
- 
+
 static void tdg_press(keypos_t pos) {
     tdg_t *t = tdg_find(pos, TDG_WAIT2);
     if (t) { // 2回目の押下
@@ -533,7 +529,7 @@ static void tdg_press(keypos_t pos) {
         t->timer = timer_read32();
     }
 }
- 
+
 static void tdg_release(keypos_t pos) {
     tdg_t *t = tdg_find(pos, TDG_HELD);
     if (t) {
@@ -564,7 +560,7 @@ static void tdg_release(keypos_t pos) {
         t->state = TDG_FREE;
     }
 }
- 
+
 static void tdg_task(void) {
     uint32_t term = (uint32_t)cfg.tdg_term * 10;
     for (uint8_t i = 0; i < TDG_SLOTS; i++) {
@@ -594,14 +590,14 @@ static void tdg_task(void) {
         }
     }
 }
- 
+
 static uint8_t step_index(uint8_t idx, int8_t delta) {
     int8_t v = (int8_t)idx + delta;
     if (v < 0) v = 0;
     if (v > SLOT_COUNT - 1) v = SLOT_COUNT - 1;
     return (uint8_t)v;
 }
- 
+
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     // CPI / スクロール速度 / 反転 のキー
     if (keycode >= CPI_UP && keycode <= RINV_Y) {
@@ -641,7 +637,7 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
         }
         return false;
     }
- 
+
     // TDG(通常の打鍵と同じ扱い: 自動レイヤー解除 + 一定時間は再ONを抑止)
     if (keycode == TDG) {
         keypos_t pos = record->event.key;
@@ -658,7 +654,7 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
         }
         return false;
     }
- 
+
     if (!record->event.pressed) {
         return true;
     }
@@ -675,7 +671,7 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     lockout_timer  = timer_read32();
     return true;
 }
- 
+
 void housekeeping_task_user(void) {
     if (!is_keyboard_master()) {
         return;
@@ -685,7 +681,7 @@ void housekeeping_task_user(void) {
     }
     tdg_task();
 }
- 
+
 /* ------------------------------------------------------------------
  * 非線形加速(マウス動作のボール)
  *   速さ(カウント/秒)に応じて倍率を 1.0 → 最大倍率 に変化させる。
@@ -702,7 +698,7 @@ static uint32_t pow_q15(uint32_t t, uint8_t c10) {
     uint32_t p1 = (p * t) >> 15;
     return (p * (10 - f) + p1 * f) / 10;
 }
- 
+
 static int32_t accel_calc_gain_q10(uint32_t speed) {
     if (!cfg.accel_enable || speed <= cfg.accel_low_speed) {
         return 1024;
@@ -716,13 +712,13 @@ static int32_t accel_calc_gain_q10(uint32_t speed) {
     int32_t max_q10 = ((int32_t)cfg.accel_max_gain * 1024) / 100;
     return 1024 + (((max_q10 - 1024) * (int32_t)pow_q15(t, cfg.accel_curve)) >> 15);
 }
- 
+
 // 移動量から速さを更新し、倍率を適用する
 static void accel_apply(ball_t *b, int16_t *x, int16_t *y) {
     int16_t  ax = abs(*x), ay = abs(*y);
     uint32_t mag = (ax > ay) ? (ax + (ay >> 1)) : (ay + (ax >> 1)); // 簡易ノルム
     b->accel_win_sum += mag;
- 
+
     uint32_t now = timer_read32();
     uint32_t dt  = TIMER_DIFF_32(now, b->accel_win_start);
     if (dt >= ACCEL_WINDOW_MS) {
@@ -730,7 +726,7 @@ static void accel_apply(ball_t *b, int16_t *x, int16_t *y) {
         b->accel_win_sum   = 0;
         b->accel_win_start = now;
     }
- 
+
     // 端数を持ち越しながら倍率を掛ける
     b->accel_frac_x += (int32_t)*x * b->accel_gain_q10;
     b->accel_frac_y += (int32_t)*y * b->accel_gain_q10;
@@ -741,7 +737,7 @@ static void accel_apply(ball_t *b, int16_t *x, int16_t *y) {
     *x = ox;
     *y = oy;
 }
- 
+
 /* ------------------------------------------------------------------
  * 軸の向き(回転 5度刻み + X/Y反転)
  *   回転角 θ: x' = x*cosθ + y*sinθ,  y' = -x*sinθ + y*cosθ  (θ=90 で x'=y, y'=-x = ROTATION_90 と同じ)
@@ -756,8 +752,8 @@ static const int16_t sin_q10[72] = {
     -887, -928, -962, -989, -1008, -1020, -1024, -1020, -1008, -989, -962, -928,
     -887, -839, -784, -724, -658, -587, -512, -433, -350, -265, -178, -89,
 };
- 
- 
+
+
 static void orient_apply(int16_t *x, int16_t *y, uint8_t rot, bool inv_x, bool inv_y, rot_frac_t *f) {
     if (rot != 0) {
         int32_t s = sin_q10[rot % 72];
@@ -778,7 +774,7 @@ static void orient_apply(int16_t *x, int16_t *y, uint8_t rot, bool inv_x, bool i
         *y = -*y;
     }
 }
- 
+
 /* ------------------------------------------------------------------
  * 直進補正(マウス動作のボール)
  *   直近の窓(straight_window ms)の移動を見て、軸に近い角度(straight_angle 度以内)なら
@@ -793,10 +789,10 @@ static const uint16_t tan_q10[46] = {
     456, 477, 499, 522, 544, 568, 591, 615, 640, 665, 691, 717,
     744, 772, 800, 829, 859, 890, 922, 955, 989, 1024,
 };
- 
+
 #define STRAIGHT_MIN_COUNTS 4 // 窓の移動量がこれ未満なら判定しない
 #define STRAIGHT_IDLE_MS 100  // この時間動きがなければロック解除
- 
+
 static uint8_t straight_judge(ball_t *b) {
     uint32_t x = b->st_last_x, y = b->st_last_y;
     if (x + y < STRAIGHT_MIN_COUNTS) {
@@ -811,7 +807,7 @@ static uint8_t straight_judge(ball_t *b) {
     }
     return 0;
 }
- 
+
 static void straighten(ball_t *b, int16_t *x, int16_t *y) {
     if (cfg.straight_angle == 0) {
         b->st_lock = 0;
@@ -855,7 +851,7 @@ static void straighten(ball_t *b, int16_t *x, int16_t *y) {
         *x = 0;
     }
 }
- 
+
 /* ------------------------------------------------------------------
  * 最終出力の倍率(マウス動作のボール)。ウルトラワイドで横を速くしたい等
  * ------------------------------------------------------------------ */
@@ -875,7 +871,7 @@ static void output_scale(ball_t *b, int16_t *x, int16_t *y) {
     *x = ox;
     *y = oy;
 }
- 
+
 /* ------------------------------------------------------------------
  * スクロールを縦横のみにする(斜めを検出しない)
  *   窓(SCRAXIS_WINDOW_MS)の動きが大きい軸にロックし、SCRAXIS_HOLD_MS ごとに再判定する。
@@ -887,7 +883,7 @@ static uint8_t sa_pick(ball_t *b) {
     }
     return (b->sa_last_x >= b->sa_last_y) ? 1 : 2;
 }
- 
+
 static void scroll_axis_only(ball_t *b, int16_t *x, int16_t *y) {
     uint32_t now = timer_read32();
     if (TIMER_DIFF_32(now, b->sa_last_motion) > SCRAXIS_IDLE_MS) {
@@ -928,7 +924,7 @@ static void scroll_axis_only(ball_t *b, int16_t *x, int16_t *y) {
         *x = 0;
     }
 }
- 
+
 /* ------------------------------------------------------------------
  * ジェスチャー(4方向のみ)
  *   動きを累積し、大きい軸の方向に 1打鍵ぶんの距離(ゆっくり/速いで別設定)進むたびに
@@ -943,7 +939,7 @@ static void gesture_emit(uint8_t layer, bool fast, uint8_t dir) {
         tap_code16(kc);
     }
 }
- 
+
 static void gesture_apply(ball_t *b, uint8_t layer, int16_t x, int16_t y) {
     uint32_t now = timer_read32();
     if (TIMER_DIFF_32(now, b->g_last_motion) > GESTURE_IDLE_MS) {
@@ -996,7 +992,7 @@ static void gesture_apply(ball_t *b, uint8_t layer, int16_t x, int16_t y) {
     b->g_x = gx;
     b->g_y = gy;
 }
- 
+
 /* ------------------------------------------------------------------
  * トラックボール処理
  *   各ボールを、設定された動作(マウス / スクロール / ジェスチャー)で処理する
@@ -1009,19 +1005,19 @@ report_mouse_t pointing_device_task_combined_user(report_mouse_t left_report, re
         right_report       = tmp;
     }
     report_mouse_t out[2] = {left_report, right_report};
- 
+
     if (lockout_active && timer_elapsed32(lockout_timer) >= AUTO_LAYER_LOCKOUT_MS) {
         lockout_active = false;
     }
- 
+
     for (uint8_t i = 0; i < 2; i++) {
         ball_t *b    = &ball[i];
         bool    left = (i == 0);
         int16_t x = out[i].x, y = out[i].y;
- 
+
         // ---- 軸の向き(回転・反転) ----
         orient_apply(&x, &y, left ? cfg.rot_left : cfg.rot_right, cfg.invert_flags & (left ? INV_LX : INV_RX), cfg.invert_flags & (left ? INV_LY : INV_RY), &b->rot);
- 
+
         // ---- 自動レイヤー切替(ボールごとに番号を設定) ----
         bool trig = activity_update(&b->act, x, y);
         if (auto_cur != AUTO_LAYER_NONE && (x || y)) {
@@ -1030,12 +1026,12 @@ report_mouse_t pointing_device_task_combined_user(report_mouse_t left_report, re
         if (!lockout_active && trig) {
             auto_layer_enable(left ? cfg.auto_layer_left : cfg.auto_layer_right);
         }
- 
+
         out[i].x = 0;
         out[i].y = 0;
         out[i].h = 0;
         out[i].v = 0;
- 
+
         switch (left ? cfg.mode_left : cfg.mode_right) {
             case MODE_SCROLL: {
                 if (cfg.invert_flags & SCR_AXIS_ONLY) {
@@ -1110,10 +1106,10 @@ report_mouse_t pointing_device_task_combined_user(report_mouse_t left_report, re
             }
         }
     }
- 
+
     return pointing_device_combine_reports(out[0], out[1]);
 }
- 
+
 void keyboard_post_init_user(void) {
     balls_init();
     cfg_load();
@@ -1121,7 +1117,7 @@ void keyboard_post_init_user(void) {
         apply_cpi();
     }
 }
- 
+
 /* ------------------------------------------------------------------
  * Vial カスタムメニュー(VIA custom UI)用ハンドラ
  *   vial.json の "menus" と value_id を揃えてある(チャンネルは 0)
@@ -1166,7 +1162,7 @@ enum trackball_value_id {
     id_gesture_step_fast   = 36, // range 8bit (カウント)
     id_tdg_term            = 37, // range 16bit (ms)
 };
- 
+
 static void set_flag(uint8_t mask, uint8_t on) {
     if (on) {
         cfg.invert_flags |= mask;
@@ -1174,12 +1170,12 @@ static void set_flag(uint8_t mask, uint8_t on) {
         cfg.invert_flags &= ~mask;
     }
 }
- 
+
 // 値のバイト並び
 //   VIA custom UI for Vial : 値は常にリトルエンディアン32bit(4バイト)
 //   VIA 本家               : 8bit、または ビッグエンディアン16bit
 static bool tb_le = false;
- 
+
 static inline uint16_t rd16(const uint8_t *p) {
     return tb_le ? (uint16_t)(p[0] | (p[1] << 8)) : (uint16_t)((p[0] << 8) | p[1]);
 }
@@ -1202,7 +1198,7 @@ static inline void wr8(uint8_t *p, uint8_t v) {
         p[3] = 0;
     }
 }
- 
+
 // d = [value_id, value_data...]
 static void tb_set_value(uint8_t *d) {
     uint8_t *v = &d[1];
@@ -1370,7 +1366,7 @@ static void tb_set_value(uint8_t *d) {
         }
     }
 }
- 
+
 static void tb_get_value(uint8_t *d) {
     uint8_t *v = &d[1];
     switch (d[0]) {
@@ -1491,7 +1487,7 @@ static void tb_get_value(uint8_t *d) {
             break;
     }
 }
- 
+
 // data = [command_id, channel_id, value_id, value_data...]
 static void tb_custom_command(uint8_t *data, uint8_t length) {
     uint8_t *command_id = &data[0];
@@ -1514,7 +1510,7 @@ static void tb_custom_command(uint8_t *data, uint8_t length) {
     }
     *command_id = id_unhandled;
 }
- 
+
 // Vial には VIA の custom UI を直接処理する経路がないため、
 // "VIA custom UI for Vial" が送ってくるコマンド(id_unhandled で包まれる)を中継する。
 // VIA 本家形式(id_custom_*)で直接届く場合にも対応。
@@ -1528,4 +1524,3 @@ void raw_hid_receive_kb(uint8_t *data, uint8_t length) {
         tb_custom_command(data, length);
     }
 }
- 
