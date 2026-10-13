@@ -99,6 +99,8 @@ enum custom_keycodes {
 #define PICK_NONE 0xFF
 #define PICK_TAP_DELAY_MS 3 // 打鍵ごとの待ち(取りこぼし防止)
 #define PICK_IME_WAIT_MS 30 // IME切替キーの後の待ち
+#define NUM_IME_LAYER L_NUM    // このレイヤーに入るとIMEをOFFにし、出るときに元の状態に戻す
+#define NUM_IME_CONTROL 1      // 1: 有効 / 0: 無効
 #define PICK_IME_CONTROL 1  // 1: 開くときIMEをOFFにし、終わったら元の状態に戻す / 0: IMEには触れない
 
 // --- ボールの動作 ---
@@ -992,6 +994,49 @@ static bool cyc_handle(uint16_t keycode, keyrecord_t *record) {
     return false;
 }
 
+/* ------------------------------------------------------------------
+ * テンキーレイヤー(NUM_IME_LAYER)に入ったらIME OFF、出たら元の状態へ
+ *   レイヤーの変化はフラグだけ立て、キー送信は housekeeping_task_user で行う
+ *   (入ってすぐ出た場合などは、何も送らずに打ち消す)
+ * ------------------------------------------------------------------ */
+static bool    numime_in      = false; // 現在NUMレイヤーにいるか
+static int8_t  numime_pending = 0;     // 0:なし 1:入った 2:出た
+static int8_t  numime_prev    = -1;    // 入る前のIME状態の推測
+
+layer_state_t layer_state_set_user(layer_state_t state) {
+#if NUM_IME_CONTROL
+    if (is_keyboard_master()) {
+        bool now = layer_state_cmp(state, NUM_IME_LAYER);
+        if (now != numime_in) {
+            numime_in = now;
+            if (numime_pending == 0) {
+                numime_pending = now ? 1 : 2;
+            } else {
+                numime_pending = 0; // 処理前に逆の動きがあったので打ち消す
+            }
+        }
+    }
+#endif
+    return state;
+}
+
+static void numime_task(void) {
+#if NUM_IME_CONTROL
+    if (numime_pending == 1) {
+        numime_prev = ime_known;
+        tap_code_delay(KC_LNG2, PICK_TAP_DELAY_MS);
+        ime_known = 0;
+    } else if (numime_pending == 2) {
+        if (numime_prev == 1 && ime_known != 1) {
+            tap_code_delay(KC_LNG1, PICK_TAP_DELAY_MS);
+            ime_known = 1;
+        }
+        numime_prev = -1;
+    }
+    numime_pending = 0;
+#endif
+}
+
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     ime_track(keycode, record);
 
@@ -1092,6 +1137,7 @@ void housekeeping_task_user(void) {
         auto_layer_disable();
     }
     tdg_task();
+    numime_task();
     if (cyc_key != CYC_NONE && cfg.cyc_timeout && timer_elapsed32(cyc_timer) >= (uint32_t)cfg.cyc_timeout * 10) {
         cyc_finish(true); // 時間切れ: 確定
     }
