@@ -41,6 +41,22 @@ enum custom_keycodes {
     RINV_X,           // 右ボール X軸反転(トグル)
     RINV_Y,           // 右ボール Y軸反転(トグル)
     TDG,              // ジェスチャータップ(動作表レイヤー8〜11を呼び出す)
+    PICK1,            // 記号ピッカー ① 括弧
+    PICK2,            // 記号ピッカー ② 演算子
+    PICK3,            // 記号ピッカー ③ 区切り・引用
+    PICK4,            // 記号ピッカー ④ その他
+    PICK5,            // 記号ピッカー ⑤ 全角 括弧
+    PICK6,            // 記号ピッカー ⑥ 全角 句読点
+    PICK7,            // 記号ピッカー ⑦ 全角 記号
+    CYC1,             // 切替入力 ① 開きカッコ   ( [ { <
+    CYC2,             // 切替入力 ② 閉じカッコ   ) ] } >
+    CYC3,             // 切替入力 ③ 引用符       ' " `
+    CYC4,             // 切替入力 ④ 演算子       + - * / =
+    CYC5,             // 切替入力 ⑤ 区切り       , . ; :
+    CYC6,             // 切替入力 ⑥ 記号         ! ? @ # $ % ^ &
+    CYC7,             // 切替入力 ⑦ 全角 開き    （ 「 ｛ ＜
+    CYC8,             // 切替入力 ⑧ 全角 閉じ    ） 」 ｝ ＞
+    LSCR_HOLD,        // 押している間だけ、左ボールをスクロールにする
 };
 
 /* ------------------------------------------------------------------
@@ -75,6 +91,15 @@ enum custom_keycodes {
 
 // --- TDG(ジェスチャータップ) ---
 #define TDG_SLOTS 8 // 同時に処理できるキー数
+
+// --- 記号ピッカー ---
+#define PICK_SETS 7        // セット数(PICK1〜PICK7)
+#define PICK_FULL_FROM 4   // このセット番号(0始まり)以降は全角セット(IMEをONにして入力)
+#define PICK_ITEMS 8       // 1セットの候補数
+#define PICK_NONE 0xFF
+#define PICK_TAP_DELAY_MS 3 // 打鍵ごとの待ち(取りこぼし防止)
+#define PICK_IME_WAIT_MS 30 // IME切替キーの後の待ち
+#define PICK_IME_CONTROL 1  // 1: 開くときIMEをOFFにし、終わったら元の状態に戻す / 0: IMEには触れない
 
 // --- ボールの動作 ---
 enum ball_mode { MODE_MOUSE = 0, MODE_SCROLL = 1, MODE_GESTURE = 2 };
@@ -118,7 +143,9 @@ typedef struct __attribute__((packed)) {
     uint8_t  gesture_step_slow; // ゆっくり: 1回の打鍵に必要な移動量(カウント)
     uint8_t  gesture_step_fast; // 速い:     1回の打鍵に必要な移動量(カウント)
     uint8_t  tdg_term;         // TDGの長押し/次のタップを待つ時間(×10ms)
-    uint8_t  reserved[18];
+    uint8_t  gesture_fast_repeat; // 0:速いジェスチャーは単発(既定) 1:速くても連続入力
+    uint8_t  cyc_timeout;      // 切替入力の自動確定までの時間(×10ms)。0=自動確定しない
+    uint8_t  reserved[16];
 } trackball_cfg_t;
 
 #define INV_LX        0x01 // 左ボール X反転
@@ -169,6 +196,7 @@ static void cfg_defaults(void) {
         .gesture_step_slow = 80,
         .gesture_step_fast = 250,
         .tdg_term         = 20,  // 200ms
+        .cyc_timeout      = 80,  // 800ms
     };
     cfg = d;
 }
@@ -351,6 +379,7 @@ typedef struct {
     // ジェスチャー
     int16_t  g_x, g_y;
     uint32_t g_last_motion, g_spd_start;
+    bool     g_fast_done; // 速いジェスチャーで1回打鍵済み(動きが止まるまで追加の打鍵をしない)
     uint32_t g_spd_sum, g_spd; // 直近の速さ(カウント/秒)
 } ball_t;
 
@@ -598,7 +627,390 @@ static uint8_t step_index(uint8_t idx, int8_t delta) {
     return (uint8_t)v;
 }
 
+/* ------------------------------------------------------------------
+ * 記号ピッカー
+ *   PICK1〜4 を押すと「1( 2) 3[ ...」のように候補を入力する。
+ *   ホームポジションの8キー(左小指=1 … 左人差指=4、右人差指=5 … 右小指=8)を押すと、
+ *   候補を全部消して選んだ記号だけを入力する。
+ *   Esc / BackSpace は候補を全部消して終了。他のキーは候補を消してそのキーを通常入力。
+ *   マウスクリックは候補を消さずに終了(カーソル位置が変わるため)。
+ *   JIS配列のキーコードで記述。記号の入れ替えは下の表を書き換える。
+ * ------------------------------------------------------------------ */
+static const uint16_t pick_table[PICK_SETS][PICK_ITEMS] = {
+    // ① 括弧          (        )         [        ]        {                 }                 <                 >
+    { LSFT(KC_8), LSFT(KC_9), KC_RBRC, KC_NUHS, LSFT(KC_RBRC), LSFT(KC_NUHS), LSFT(KC_COMM), LSFT(KC_DOT) },
+    // ② 演算子        +             -        *              /        =              ^       ~              %
+    { LSFT(KC_SCLN), KC_MINS, LSFT(KC_QUOT), KC_SLSH, LSFT(KC_MINS), KC_EQL, LSFT(KC_EQL), LSFT(KC_5) },
+    // ③ 区切り・引用  !          ?             '          "          `              :        ;        ,
+    { LSFT(KC_1), LSFT(KC_SLSH), LSFT(KC_7), LSFT(KC_2), LSFT(KC_LBRC), KC_QUOT, KC_SCLN, KC_COMM },
+    // ④ その他        @        #          $          &          _              |              ¥        \  (バックスラッシュ)
+    { KC_LBRC, LSFT(KC_3), LSFT(KC_4), LSFT(KC_6), LSFT(KC_INT1), LSFT(KC_INT3), KC_INT3, KC_INT1 },
+    // --- 以下は全角セット: IME ON で半角記号キーを打つと全角になる(IMEの設定による) ---
+    // ⑤ 全角括弧      （          ）          「        」        ｛              ｝              ＜              ＞
+    { LSFT(KC_8), LSFT(KC_9), KC_RBRC, KC_NUHS, LSFT(KC_RBRC), LSFT(KC_NUHS), LSFT(KC_COMM), LSFT(KC_DOT) },
+    // ⑥ 全角 記号等   ・        〜             ！            ？               ：        ；        ＿              ＄
+    { KC_SLSH, LSFT(KC_EQL), LSFT(KC_1), LSFT(KC_SLSH), KC_QUOT, KC_SCLN, LSFT(KC_INT1), LSFT(KC_4) },
+    // ⑦ 全角記号      ＋             ＝              ＊              ＠        ＃          ＆          ％          ￥
+    { LSFT(KC_SCLN), LSFT(KC_MINS), LSFT(KC_QUOT), KC_LBRC, LSFT(KC_3), LSFT(KC_6), LSFT(KC_5), KC_INT3 },
+};
+
+// 選択に使うキーの位置(マトリクス座標。左小指→左人差指、右人差指→右小指)
+static const keypos_t pick_keys[PICK_ITEMS] = {
+    { .row = 3, .col = 1 }, { .row = 2, .col = 2 }, { .row = 2, .col = 3 }, { .row = 2, .col = 4 }, // A S D F
+    { .row = 7, .col = 2 }, { .row = 7, .col = 3 }, { .row = 7, .col = 4 }, { .row = 8, .col = 5 }, // J K L ;
+};
+
+static uint8_t pick_set      = PICK_NONE; // 候補表示中のセット
+static uint8_t pick_len      = 0;         // 入力した候補の文字数(消すときの数)
+static uint8_t pick_swallow  = 0;         // 選択に使ったキーのリリースを無視するためのビット
+
+/* IMEの状態追跡: キーボード側から実際のIME状態は読めないので、
+ * 最後に押した KC_LNG1(IME ON) / KC_LNG2(IME OFF) から推測する。
+ * 不明(起動後まだ押していない)のときは、元に戻す動作はしない。 */
+static int8_t  ime_known    = -1; // -1:不明 0:OFF 1:ON
+static int8_t  pick_ime_prev = -1;      // 開く前のIME状態の推測(-1:不明)
+static bool    pick_cur_full = false;   // 表示中のセットが全角セットか
+
+static void ime_track(uint16_t keycode, keyrecord_t *record) {
+    if (!record->event.pressed) {
+        return;
+    }
+    uint16_t kc = keycode;
+    if (IS_QK_MOD_TAP(keycode)) {
+        if (record->tap.count == 0) {
+            return; // 長押し側(修飾キー)
+        }
+        kc = QK_MOD_TAP_GET_TAP_KEYCODE(keycode);
+    } else if (IS_QK_LAYER_TAP(keycode)) {
+        if (record->tap.count == 0) {
+            return;
+        }
+        kc = QK_LAYER_TAP_GET_TAP_KEYCODE(keycode);
+    }
+    if (kc == KC_LNG1) {
+        ime_known = 1;
+    } else if (kc == KC_LNG2) {
+        ime_known = 0;
+    }
+}
+
+// 半角セットはIME OFF、全角セットはIME ON で候補を入力する
+static void pick_ime_begin(bool full, bool first) {
+#if PICK_IME_CONTROL
+    if (first) {
+        pick_ime_prev = ime_known;
+    }
+    tap_code_delay(full ? KC_LNG1 : KC_LNG2, PICK_TAP_DELAY_MS);
+    ime_known = full ? 1 : 0;
+    wait_ms(PICK_IME_WAIT_MS);
+#endif
+    pick_cur_full = full;
+}
+
+// 終了時: 全角セットは変換中の文字を確定(Enter)してから、IMEを元の状態に戻す
+static void pick_ime_end(bool commit) {
+#if PICK_IME_CONTROL
+    if (commit && pick_cur_full) {
+        tap_code_delay(KC_ENT, PICK_TAP_DELAY_MS);
+    }
+    if (pick_ime_prev == 1 && ime_known != 1) {
+        wait_ms(PICK_IME_WAIT_MS);
+        tap_code_delay(KC_LNG1, PICK_TAP_DELAY_MS);
+        ime_known = 1;
+    } else if (pick_ime_prev == 0 && ime_known != 0) {
+        wait_ms(PICK_IME_WAIT_MS);
+        tap_code_delay(KC_LNG2, PICK_TAP_DELAY_MS);
+        ime_known = 0;
+    }
+    pick_ime_prev = -1;
+#endif
+    pick_cur_full = false;
+}
+
+static void pick_type(uint16_t kc) {
+    tap_code16_delay(kc, PICK_TAP_DELAY_MS);
+}
+
+static void pick_erase(void) {
+    for (uint8_t i = 0; i < pick_len; i++) {
+        tap_code_delay(KC_BSPC, PICK_TAP_DELAY_MS);
+    }
+    pick_len = 0;
+}
+
+static void pick_open(uint8_t set) {
+    pick_len = 0;
+    for (uint8_t i = 0; i < PICK_ITEMS; i++) {
+        if (i > 0 && set < PICK_FULL_FROM) { // 全角セットは空白を入れない(IMEが変換を始めてしまうため)
+            pick_type(KC_SPC);
+            pick_len++;
+        }
+        pick_type(KC_1 + i); // 数字の目印(KC_1〜KC_8)
+        pick_type(pick_table[set][i]);
+        pick_len += 2;
+    }
+    pick_set = set;
+}
+
+static int8_t pick_index_of(keypos_t pos) {
+    for (uint8_t i = 0; i < PICK_ITEMS; i++) {
+        if (pos.row == pick_keys[i].row && pos.col == pick_keys[i].col) {
+            return (int8_t)i;
+        }
+    }
+    return -1;
+}
+
+/* ------------------------------------------------------------------
+ * 切替入力(CYC1〜8)
+ *   キーを押すたびに、そのキーの候補リストの文字が1文字ずつ入れ替わる。
+ *   例: CYC1 は ( → [ → { → < → ( …  (押すたびに直前の1文字をBackSpaceで消して次を入力)
+ *   他のキーを押す / 一定時間たつ(Vialメニューで調整) / クリック で確定する。
+ *   CYC_FULL_FROM 以降のキーは全角(IMEをONにして入力し、確定時にEnter)。
+ * ------------------------------------------------------------------ */
+#define CYC_KEYS 8
+#define CYC_MAX 8
+#define CYC_FULL_FROM 6
+#define CYC_NONE 0xFF
+static const uint16_t cyc_table[CYC_KEYS][CYC_MAX] = {
+    // CYC1 開きカッコ  (            [        {                <
+    { LSFT(KC_8), KC_RBRC, LSFT(KC_RBRC), LSFT(KC_COMM), KC_NO, KC_NO, KC_NO, KC_NO },
+    // CYC2 閉じカッコ  )            ]        }                >
+    { LSFT(KC_9), KC_NUHS, LSFT(KC_NUHS), LSFT(KC_DOT), KC_NO, KC_NO, KC_NO, KC_NO },
+    // CYC3 引用符      '            "           `
+    { LSFT(KC_7), LSFT(KC_2), LSFT(KC_LBRC), KC_NO, KC_NO, KC_NO, KC_NO, KC_NO },
+    // CYC4 演算子      +               -        *              /        =
+    { LSFT(KC_SCLN), KC_MINS, LSFT(KC_QUOT), KC_SLSH, LSFT(KC_MINS), KC_NO, KC_NO, KC_NO },
+    // CYC5 区切り      ,        .       ;        :
+    { KC_COMM, KC_DOT, KC_SCLN, KC_QUOT, KC_NO, KC_NO, KC_NO, KC_NO },
+    // CYC6 記号        !            ?              @        #            $            %            ^       &
+    { LSFT(KC_1), LSFT(KC_SLSH), KC_LBRC, LSFT(KC_3), LSFT(KC_4), LSFT(KC_5), KC_EQL, LSFT(KC_6) },
+    // CYC7 全角 開き   （           「        ｛              ＜
+    { LSFT(KC_8), KC_RBRC, LSFT(KC_RBRC), LSFT(KC_COMM), KC_NO, KC_NO, KC_NO, KC_NO },
+    // CYC8 全角 閉じ   ）           」        ｝               ＞
+    { LSFT(KC_9), KC_NUHS, LSFT(KC_NUHS), LSFT(KC_DOT), KC_NO, KC_NO, KC_NO, KC_NO },
+};
+static bool     lscr_hold = false;    // LSCR_HOLD を押している間 true
+static uint8_t  cyc_key   = CYC_NONE; // 切替中のキー番号
+static uint8_t  cyc_idx   = 0;        // 現在の候補番号
+static uint32_t cyc_timer = 0;
+
+static uint8_t cyc_count(uint8_t k) {
+    uint8_t n = 0;
+    while (n < CYC_MAX && cyc_table[k][n] != KC_NO) {
+        n++;
+    }
+    return n;
+}
+
+static void cyc_finish(bool commit) {
+    if (cyc_key == CYC_NONE) {
+        return;
+    }
+    cyc_key = CYC_NONE;
+    pick_ime_end(commit);
+}
+
+// 戻り値 true: このキーイベントは処理済み(通常処理しない)
+static bool pick_handle(uint16_t keycode, keyrecord_t *record) {
+    keypos_t pos = record->event.key;
+    bool valid_pos = (record->event.type == KEY_EVENT) && pos.row < MATRIX_ROWS && pos.col < MATRIX_COLS;
+
+    // 選択に使ったキーのリリースは無視する
+    if (!record->event.pressed) {
+        if (valid_pos && pick_swallow) {
+            int8_t idx = pick_index_of(pos);
+            if (idx >= 0 && (pick_swallow & (1u << idx))) {
+                pick_swallow &= (uint8_t)~(1u << idx);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool is_pick_key = (keycode >= PICK1 && keycode < PICK1 + PICK_SETS);
+    if (pick_set == PICK_NONE) {
+        if (!is_pick_key) {
+            return false;
+        }
+        // 開く(Shift等を押していても記号が正しく出るよう、修飾を一時的に外す)
+        uint8_t mods = get_mods();
+        uint8_t weak = get_weak_mods();
+        uint8_t osm  = get_oneshot_mods();
+        clear_mods();
+        clear_weak_mods();
+        clear_oneshot_mods();
+        cyc_finish(true); // 切替入力の途中なら確定してから開く
+        pick_ime_begin((keycode - PICK1) >= PICK_FULL_FROM, true);
+        pick_open(keycode - PICK1);
+        set_mods(mods);
+        set_weak_mods(weak);
+        set_oneshot_mods(osm);
+        return true;
+    }
+
+    // --- 候補表示中 ---
+    uint8_t mods = get_mods();
+    uint8_t weak = get_weak_mods();
+    uint8_t osm  = get_oneshot_mods();
+
+    if (valid_pos) {
+        int8_t idx = pick_index_of(pos);
+        if (idx >= 0) {
+            uint8_t set = pick_set;
+            clear_mods();
+            clear_weak_mods();
+            clear_oneshot_mods();
+            pick_erase();
+            pick_type(pick_table[set][idx]);
+            pick_ime_end(true);
+            set_mods(mods);
+            set_weak_mods(weak);
+            set_oneshot_mods(osm);
+            pick_set = PICK_NONE;
+            pick_swallow |= (uint8_t)(1u << idx);
+            return true;
+        }
+    }
+
+    // 修飾キー・一時レイヤー(MO)は邪魔しない
+    if (IS_MODIFIER_KEYCODE(keycode) || IS_QK_MOMENTARY(keycode)) {
+        return false;
+    }
+    // クリックはカーソル位置が変わるので、候補は消さずに終了
+    if (IS_MOUSEKEY(keycode)) {
+        pick_set = PICK_NONE;
+        pick_ime_end(false);
+        return false;
+    }
+
+    // ここから「候補を全部消して終了」
+    clear_mods();
+    clear_weak_mods();
+    clear_oneshot_mods();
+    pick_erase();
+    set_mods(mods);
+    set_weak_mods(weak);
+    set_oneshot_mods(osm);
+    uint8_t prev = pick_set;
+    pick_set = PICK_NONE;
+    if (keycode == KC_ESC || keycode == KC_BSPC) {
+        pick_ime_end(false);
+        return true; // 消すだけ
+    }
+    if (is_pick_key) {
+        if ((uint8_t)(keycode - PICK1) != prev) {
+            clear_mods();
+            clear_weak_mods();
+            clear_oneshot_mods();
+            pick_ime_begin((keycode - PICK1) >= PICK_FULL_FROM, false);
+            pick_open(keycode - PICK1); // 別のセットなら開き直す
+            set_mods(mods);
+            set_weak_mods(weak);
+            set_oneshot_mods(osm);
+            return true;
+        }
+        pick_ime_end(false);
+        return true; // 同じキーなら閉じるだけ
+    }
+    pick_ime_end(false);
+    return false; // 他のキーは通常どおり入力
+}
+
+static void cyc_mods_save_clear(uint8_t *m, uint8_t *w, uint8_t *o) {
+    *m = get_mods();
+    *w = get_weak_mods();
+    *o = get_oneshot_mods();
+    clear_mods();
+    clear_weak_mods();
+    clear_oneshot_mods();
+}
+
+static void cyc_mods_restore(uint8_t m, uint8_t w, uint8_t o) {
+    set_mods(m);
+    set_weak_mods(w);
+    set_oneshot_mods(o);
+}
+
+static bool cyc_handle(uint16_t keycode, keyrecord_t *record) {
+    if (!record->event.pressed) {
+        return false;
+    }
+    bool is_cyc = (keycode >= CYC1 && keycode < CYC1 + CYC_KEYS);
+    uint8_t m, w, o;
+    if (cyc_key == CYC_NONE) {
+        if (!is_cyc) {
+            return false;
+        }
+        uint8_t k = keycode - CYC1;
+        cyc_mods_save_clear(&m, &w, &o);
+        pick_ime_begin(k >= CYC_FULL_FROM, true);
+        pick_type(cyc_table[k][0]);
+        cyc_mods_restore(m, w, o);
+        cyc_key   = k;
+        cyc_idx   = 0;
+        cyc_timer = timer_read32();
+        return true;
+    }
+    // --- 切替中 ---
+    if (is_cyc && (uint8_t)(keycode - CYC1) == cyc_key) {
+        uint8_t n = cyc_count(cyc_key);
+        cyc_idx   = (cyc_idx + 1) % (n ? n : 1);
+        cyc_mods_save_clear(&m, &w, &o);
+        tap_code_delay(KC_BSPC, PICK_TAP_DELAY_MS);
+        pick_type(cyc_table[cyc_key][cyc_idx]);
+        cyc_mods_restore(m, w, o);
+        cyc_timer = timer_read32();
+        return true;
+    }
+    if (IS_MODIFIER_KEYCODE(keycode) || IS_QK_MOMENTARY(keycode)) {
+        return false; // 修飾キー・一時レイヤーは邪魔しない
+    }
+    if (IS_MOUSEKEY(keycode)) {
+        cyc_finish(false);
+        return false;
+    }
+    if (keycode == KC_ESC || keycode == KC_BSPC) {
+        cyc_mods_save_clear(&m, &w, &o);
+        tap_code_delay(KC_BSPC, PICK_TAP_DELAY_MS); // 入力中の1文字を消して終了
+        cyc_mods_restore(m, w, o);
+        cyc_finish(false);
+        return true;
+    }
+    cyc_finish(true); // 他のキー: 確定してからそのキーを処理
+    if (is_cyc) {
+        uint8_t k = keycode - CYC1;
+        cyc_mods_save_clear(&m, &w, &o);
+        pick_ime_begin(k >= CYC_FULL_FROM, true);
+        pick_type(cyc_table[k][0]);
+        cyc_mods_restore(m, w, o);
+        cyc_key   = k;
+        cyc_idx   = 0;
+        cyc_timer = timer_read32();
+        return true;
+    }
+    return false;
+}
+
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
+    ime_track(keycode, record);
+
+    // 左ボール一時スクロール(押している間だけ。自動レイヤーや他の入力には影響しない)
+    if (keycode == LSCR_HOLD) {
+        lscr_hold = record->event.pressed;
+        return false;
+    }
+
+    // 記号ピッカー(候補表示中のキー処理)
+    if (pick_handle(keycode, record) || cyc_handle(keycode, record)) {
+        if (record->event.pressed) {
+            auto_layer_disable();
+            lockout_active = true;
+            lockout_timer  = timer_read32();
+        }
+        return false;
+    }
+
     // CPI / スクロール速度 / 反転 のキー
     if (keycode >= CPI_UP && keycode <= RINV_Y) {
         if (record->event.pressed) {
@@ -680,6 +1092,9 @@ void housekeeping_task_user(void) {
         auto_layer_disable();
     }
     tdg_task();
+    if (cyc_key != CYC_NONE && cfg.cyc_timeout && timer_elapsed32(cyc_timer) >= (uint32_t)cfg.cyc_timeout * 10) {
+        cyc_finish(true); // 時間切れ: 確定
+    }
 }
 
 /* ------------------------------------------------------------------
@@ -928,7 +1343,8 @@ static void scroll_axis_only(ball_t *b, int16_t *x, int16_t *y) {
 /* ------------------------------------------------------------------
  * ジェスチャー(4方向のみ)
  *   動きを累積し、大きい軸の方向に 1打鍵ぶんの距離(ゆっくり/速いで別設定)進むたびに
- *   ジェスチャー表(レイヤー)の対応する位置のキーを1回打鍵する。動かし続ければ連続入力になる。
+ *   ジェスチャー表(レイヤー)の対応する位置のキーを1回打鍵する。ゆっくり動かし続ければ連続入力になる。
+ *   速い動きは単発(1回打鍵したら、動きが止まるまで打鍵しない)。cfg.gesture_fast_repeat=1 で連続にもできる。
  *   速さが 「速い」しきい値以上なら 行1(速い)、未満なら 行0(ゆっくり)のキーを使う。
  * ------------------------------------------------------------------ */
 // 方向: 0:上 1:下 2:左 3:右
@@ -944,6 +1360,7 @@ static void gesture_apply(ball_t *b, uint8_t layer, int16_t x, int16_t y) {
     uint32_t now = timer_read32();
     if (TIMER_DIFF_32(now, b->g_last_motion) > GESTURE_IDLE_MS) {
         b->g_x = b->g_y = 0;
+        b->g_fast_done  = false;
         b->g_spd        = 0;
         b->g_spd_sum    = 0;
         b->g_spd_start  = now;
@@ -965,6 +1382,11 @@ static void gesture_apply(ball_t *b, uint8_t layer, int16_t x, int16_t y) {
     //   (動き出しの一打目が「ゆっくり」と誤判定されないよう、途中経過も見る)
     uint32_t spd_now = (b->g_spd_sum * 1000) / (dt < GESTURE_SPEED_MIN_DT_MS ? GESTURE_SPEED_MIN_DT_MS : dt);
     uint32_t spd     = b->g_spd > spd_now ? b->g_spd : spd_now;
+    // 速いジェスチャーで打鍵済みなら、動きが止まるまで何もしない(減速中の「ゆっくり」判定の誤爆も防ぐ)
+    if (b->g_fast_done) {
+        b->g_x = b->g_y = 0;
+        return;
+    }
     // 距離を累積(小さい軸は捨てる: 4方向のみ)
     int32_t gx = b->g_x + x, gy = b->g_y + y;
     if (gx > 32000) gx = 32000;
@@ -987,6 +1409,11 @@ static void gesture_apply(ball_t *b, uint8_t layer, int16_t x, int16_t y) {
             gesture_emit(layer, fast, gy > 0 ? 1 : 0);
             gy += (gy > 0) ? -step : step;
             gx = 0;
+        }
+        if (fast && !cfg.gesture_fast_repeat) {
+            b->g_fast_done = true; // 単発: 動きが止まるまでこれ以上打鍵しない
+            gx = gy = 0;
+            break;
         }
     }
     b->g_x = gx;
@@ -1032,7 +1459,7 @@ report_mouse_t pointing_device_task_combined_user(report_mouse_t left_report, re
         out[i].h = 0;
         out[i].v = 0;
 
-        switch (left ? cfg.mode_left : cfg.mode_right) {
+        switch ((left && lscr_hold) ? MODE_SCROLL : (left ? cfg.mode_left : cfg.mode_right)) {
             case MODE_SCROLL: {
                 if (cfg.invert_flags & SCR_AXIS_ONLY) {
                     scroll_axis_only(b, &x, &y);
@@ -1161,6 +1588,8 @@ enum trackball_value_id {
     id_gesture_step_slow   = 35, // range 8bit (カウント)
     id_gesture_step_fast   = 36, // range 8bit (カウント)
     id_tdg_term            = 37, // range 16bit (ms)
+    id_gesture_fast_repeat = 38, // toggle: 速いジェスチャーも連続入力にする
+    id_cyc_timeout         = 39, // range 16bit (ms) 0=自動確定しない
 };
 
 static void set_flag(uint8_t mask, uint8_t on) {
@@ -1332,6 +1761,14 @@ static void tb_set_value(uint8_t *d) {
             cfg.gesture_step_fast = v[0];
             cfg_sanitize();
             break;
+        case id_gesture_fast_repeat:
+            cfg.gesture_fast_repeat = v[0] ? 1 : 0;
+            break;
+        case id_cyc_timeout: {
+            uint16_t q = rd16(v) / 10;
+            cfg.cyc_timeout = q > 255 ? 255 : q;
+            break;
+        }
         case id_tdg_term: {
             uint16_t q = rd16(v) / 10;
             cfg.tdg_term = q > 255 ? 255 : q;
@@ -1466,6 +1903,12 @@ static void tb_get_value(uint8_t *d) {
             break;
         case id_gesture_step_fast:
             wr8(v, cfg.gesture_step_fast);
+            break;
+        case id_gesture_fast_repeat:
+            wr8(v, cfg.gesture_fast_repeat);
+            break;
+        case id_cyc_timeout:
+            wr16(v, (uint16_t)cfg.cyc_timeout * 10);
             break;
         case id_tdg_term:
             wr16(v, (uint16_t)cfg.tdg_term * 10);
