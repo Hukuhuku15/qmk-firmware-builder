@@ -7,7 +7,6 @@ on:
 env:
   QMK_REPO: vial-kb/vial-qmk
   QMK_BRANCH: vial
-  KB_TARGET: split_lotus_ib:vial
 
 jobs:
   build:
@@ -34,7 +33,6 @@ jobs:
         printf '!/keyboards/**/keymaps\n' >> .git/info/sparse-checkout
         git checkout $QMK_BRANCH --
 
-    # qmk setup は使わない。vial-qmk のフォルダを明示的に QMK_HOME に指定する
     - name: Set Up QMK
       working-directory: ./qmk_firmware
       run: |
@@ -48,40 +46,52 @@ jobs:
         mkdir -p qmk_firmware/keyboards/
         cp -rup ./keyboards/* ./qmk_firmware/keyboards/
 
-    # 新しいPython環境でのQMKのバグ（ast.Num問題）を修正
     - name: Patch QMK Python Library for newer Python versions
       working-directory: ./qmk_firmware
       run: |
         sed -i "s/isinstance(node, ast.Num):/isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):/g" lib/python/qmk/math.py || true
         sed -i "s/return node.n/return node.value/g" lib/python/qmk/math.py || true
 
-    - name: Compile Custom Firmware (Left & Right)
+    - name: Check files
       working-directory: ./qmk_firmware
       run: |
-        set -e
+        ls -l keyboards/split_lotus_ib keyboards/split_lotus_ib/keymaps/vial
+        git log -1 --oneline
+
+    - name: Compile Custom Firmware (Left & Right)
+      working-directory: ./qmk_firmware
+      shell: bash
+      run: |
         export QMK_HOME=$PWD
         mkdir -p ../output_artifacts
 
-        make clean
-        echo "=== Building LEFT side ==="
-        make $KB_TARGET EXTRAFLAGS+="-DINIT_EE_HANDS_LEFT"
-        for f in *.hex *.bin *.uf2; do
-          if [ -f "$f" ]; then
-            mv "$f" "../output_artifacts/${f%.*}_left.${f##*.}"
+        build_side() {
+          side="$1"; flag="$2"
+          make clean
+          echo "=== Building ${side} side ==="
+          rm -f *.uf2 *.hex *.bin
+          make split_lotus_ib:vial EXTRAFLAGS+="${flag}" 2>&1 | tee ../build_${side}.log
+          if [ "${PIPESTATUS[0]}" -ne 0 ]; then
+            echo "::error::make failed (${side})"; exit 1
           fi
-        done
+          found=0
+          for f in $(find . -maxdepth 2 \( -name '*.uf2' -o -name '*.hex' -o -name '*.bin' \) -not -path './lib/*' -not -path './.build/obj_*'); do
+            b=$(basename "$f")
+            cp "$f" "../output_artifacts/${b%.*}_${side}.${b##*.}"
+            found=1
+          done
+          if [ "$found" -eq 0 ]; then
+            echo "::error::no firmware file produced (${side})"
+            echo "---- .build ----"; ls -l .build 2>/dev/null | head -30
+            exit 1
+          fi
+        }
 
-        make clean
-        echo "=== Building RIGHT side ==="
-        make $KB_TARGET EXTRAFLAGS+="-DINIT_EE_HANDS_RIGHT"
-        for f in *.hex *.bin *.uf2; do
-          if [ -f "$f" ]; then
-            mv "$f" "../output_artifacts/${f%.*}_right.${f##*.}"
-          fi
-        done
+        build_side left  -DINIT_EE_HANDS_LEFT
+        build_side right -DINIT_EE_HANDS_RIGHT
 
         ls -l ../output_artifacts
-        mv ../output_artifacts/* .
+        cp ../output_artifacts/* .
 
     - name: Upload compiled firmware (build artifact)
       uses: actions/upload-artifact@v4
@@ -94,6 +104,16 @@ jobs:
           ./qmk_firmware/*_right.hex
           ./qmk_firmware/*_right.bin
           ./qmk_firmware/*_right.uf2
+
+    - name: Upload build logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: Build Logs
+        path: |
+          ./build_left.log
+          ./build_right.log
+        if-no-files-found: ignore
 
     - name: Upload compiled firmware (tagged release)
       uses: softprops/action-gh-release@v2
