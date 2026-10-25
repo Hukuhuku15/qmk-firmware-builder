@@ -52,11 +52,30 @@ jobs:
         sed -i "s/isinstance(node, ast.Num):/isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):/g" lib/python/qmk/math.py || true
         sed -i "s/return node.n/return node.value/g" lib/python/qmk/math.py || true
 
-    - name: Check files
+    # リポジトリ側が keyboards/split_lotus_ib/vial/ の置き方でも、QMK が探す keymaps/vial/ に直す
+    - name: Normalize layout
       working-directory: ./qmk_firmware
+      shell: bash
       run: |
-        ls -l keyboards/split_lotus_ib keyboards/split_lotus_ib/keymaps/vial
-        git log -1 --oneline
+        KB=keyboards/split_lotus_ib
+        echo "--- before ---"; find $KB -type f | sort
+        if [ -d $KB/vial ] && [ ! -d $KB/keymaps/vial ]; then
+          mkdir -p $KB/keymaps
+          cp -r $KB/vial $KB/keymaps/vial
+        fi
+        # config.h / rules.mk はキーボード直下に置く(keymaps側にあれば引き上げる)
+        for f in config.h rules.mk; do
+          if [ ! -f $KB/$f ]; then
+            for d in $KB/vial $KB/keymaps/vial; do
+              if [ -f $d/$f ]; then cp $d/$f $KB/$f; break; fi
+            done
+          fi
+          rm -f $KB/keymaps/vial/$f
+        done
+        echo "--- after ---"; find $KB -type f | sort
+        for f in config.h rules.mk keymaps/vial/keymap.c keymaps/vial/vial.json keyboard.json; do
+          [ -f $KB/$f ] || { echo "::error::missing $KB/$f"; exit 1; }
+        done
 
     - name: Compile Custom Firmware (Left & Right)
       working-directory: ./qmk_firmware
