@@ -263,7 +263,7 @@ static void cfg_defaults(void) {
         .cpi_index        = 1,
         .scroll_index     = 4, // = 分周10(従来の固定値と同じ)
         .accel_enable     = 1,
-        .accel_curve      = 20,
+        .accel_curve      = 30,
         .precision_div    = 4,
         .precision_lock   = 1,
         // 左右入れ替えなし。左ボールのX/Y反転のみON、右ボールは反転なし
@@ -272,10 +272,10 @@ static void cfg_defaults(void) {
         .rot_right        = 18, // 90度
         .cpi_q            = {16, 21, 26, 32, 42, 53, 63}, // 608 / 798 / 988 / 1216 / 1596 / 2014 / 2394
         .scroll_div       = {80, 48, 30, 18, 10, 6, 4},
-        .accel_max_gain   = 200,
-        .accel_low_speed  = 500,
-        .accel_high_speed = 3500,
-        .straight_angle   = 10,  // 10度以内なら軸に揃える
+        .accel_max_gain   = 500,
+        .accel_low_speed  = 495,
+        .accel_high_speed = 2398,
+        .straight_angle   = 1,   // 1度以内なら軸に揃える
         .straight_window  = 30,  // 30ms分の動きで判定
         .straight_lock    = 25,  // 250msロックしたら再判定
         .x_scale          = 50,  // 100%
@@ -288,8 +288,9 @@ static void cfg_defaults(void) {
         .gesture_layer_left  = L_GESTURE,
         .gesture_layer_right = L_GESTURE,
         .gesture_speed    = 100, // 1000カウント/秒以上を「速い」
-        .gesture_step_slow = 80,
-        .gesture_step_fast = 250,
+        .gesture_step_slow = 111,
+        .gesture_step_fast = 127,
+        .gesture_fast_repeat = 1,
         .tdg_term         = 20,  // 200ms
         .cyc_timeout      = 80,  // 800ms
     };
@@ -476,62 +477,149 @@ static void apply_cpi(void) {
 
 const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     [L_BASE] = {
-        { KC_ESC,  TG(1),          TD(2),   TD(3),            TD(4),   TD(5), KC_UP },
-        { KC_GRV,  TD(1),          KC_W,    KC_E,             KC_R,    KC_T, KC_DOWN },
-        { KC_TAB,  KC_Q,           KC_S,    KC_D,             KC_F,    KC_G, KC_LEFT },
-        { KC_LGUI, KC_A,           KC_X,    KC_C,             KC_V,    KC_B,             _______ },
-        { KC_LALT, KC_Z, BALL_SCROLL , LCTL_T(KC_LNG2),  TT(2),   LSFT_T(KC_ENT),   KC_BSPC },
-        { KC_RGHT , TD(6),          TD(7),   TD(8),            TD(9), KC_PGUP , KC_PGDN },
-        { KC_HOME , KC_Y,           KC_U,    KC_I,             KC_O,    TD(0),            KC_BSPC },
-        { KC_END , KC_H,           KC_J,    KC_K,             KC_L,    KC_P,             _______ },
-        { _______, KC_N,           KC_M,    KC_COMM,          KC_DOT,  KC_SCLN,          KC_ENT  },
-        { _______, RSFT_T(KC_SPC), TT(3),   RCTL_T(KC_LNG1), BALL_MOUSE , KC_SLSH,          KC_INT1   },
+        { TDG, TG(1), TD(1), TD(2), TD(3), TD(4), KC_UP },
+        { TDG, TD(1), KC_W, KC_E, KC_R, KC_T, KC_DOWN },
+        { KC_TAB, KC_Q, KC_S, KC_D, KC_F, KC_G, KC_LEFT },
+        { KC_LGUI, KC_A, KC_X, KC_C, KC_V, KC_B, MO(6) },
+        { KC_LALT, KC_Z, BALL_GESTURE, LCTL_T(KC_LNG2), TT(2), LSFT_T(KC_ENT), KC_BSPC },
+        { KC_RGHT, TD(6), TD(7), TD(8), TD(9), KC_UP, KC_DOWN },
+        { KC_LEFT, KC_Y, KC_U, KC_I, KC_O, TD(0), KC_BSPC },
+        { KC_RGHT, KC_H, KC_J, KC_K, KC_L, KC_P, KC_MINS },
+        { _______, KC_N, KC_M, KC_COMM, KC_DOT, KC_SCLN, KC_ENT },
+        { TT(5), RSFT_T(KC_SPC), TT(3), RCTL_T(KC_LNG1), MO(4), KC_SLSH, KC_INT1 },
     },
     [L_ALT] = {
-        { _______, TG(1),    KC_2,    KC_3,    KC_4,    KC_5, _______ },
-        { _______, KC_1,     KC_M,    KC_T,    KC_R,    KC_G, _______ },
-        { _______, KC_X,     KC_S,    KC_K,    KC_N,    KC_B, _______ },
-        { _______, KC_H,     KC_C,    KC_V,    KC_D,    KC_P,    _______ },
-        { _______, KC_Z, _______ , _______, _______, _______, _______ },
-        { _______ , KC_6,     KC_7,    KC_8,    KC_9, _______ , _______ },
-        { _______ , KC_F,     KC_MINS, KC_E,    KC_O,    KC_0,    KC_BSPC },
-        { _______ , KC_Y,     KC_I,    KC_A,    KC_U,    KC_J,    KC_Q    },
-        { _______, KC_W,     KC_L,    KC_COMM, KC_LEFT, KC_UP,   KC_DOT  },
-        { _______, _______,  _______, _______, _______ , KC_DOWN, KC_RGHT },
+        { TDG, TG(1), TDG, TDG, TDG, TDG, _______ },
+        { TDG, TDG, KC_M, KC_T, KC_R, KC_G, _______ },
+        { _______, KC_X, KC_S, KC_K, KC_N, KC_B, _______ },
+        { _______, KC_H, KC_C, KC_V, KC_D, KC_P, _______ },
+        { _______, KC_Z, _______, _______, _______, _______, _______ },
+        { _______, TDG, TDG, TDG, TDG, _______, _______ },
+        { _______, KC_F, KC_MINS, KC_E, KC_O, TDG, TDG },
+        { _______, KC_Y, KC_I, KC_A, KC_U, KC_Q, XXXXXXX },
+        { _______, KC_L, KC_W, KC_COMM, KC_DOT, KC_J, KC_ENT },
+        { _______, _______, _______, _______, _______, XXXXXXX, XXXXXXX },
     },
     [L_NUM] = {
-        { _______, _______,        _______, _______, _______, _______, _______ },
-        { _______, _______,        _______, _______, _______, _______, _______ },
-        { _______, _______,        _______, _______, _______, _______, _______ },
-        { _______, _______,        _______, _______, _______, _______, _______ },
-        { _______, _______, _______ , _______, _______, _______, _______ },
-        { _______ , LSFT(KC_MINS),  KC_PSLS, KC_PAST, KC_BSPC, _______ , _______ },
-        { _______ , KC_P7,          KC_P8,   KC_P9,   KC_PMNS, _______, _______ },
-        { _______ , KC_P4,          KC_P5,   KC_P6,   KC_PPLS, _______, _______ },
-        { XXXXXXX, KC_P1,          KC_P2,   KC_P3,   KC_PENT, _______, _______ },
-        { XXXXXXX, KC_P0,          KC_PDOT, KC_PCMM, _______ , _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, LSFT(KC_MINS), KC_PSLS, KC_PAST, KC_BSPC, _______, _______ },
+        { _______, KC_P7, KC_P8, KC_P9, KC_PMNS, _______, _______ },
+        { _______, KC_P4, KC_P5, KC_P6, KC_PPLS, _______, _______ },
+        { XXXXXXX, KC_P1, KC_P2, KC_P3, KC_PENT, _______, _______ },
+        { XXXXXXX, KC_P0, KC_PDOT, KC_PCMM, _______, _______, _______ },
     },
     [L_SYM] = {
-        { _______, _______,        _______,         _______,         _______,          _______, _______ },
-        { _______, KC_SCLN,        LSFT(KC_MINS),   KC_SLSH,         LSFT(KC_SCLN),    LSFT(KC_7), _______ },
-        { KC_INT3, LSFT(KC_5),     KC_RBRC,         LSFT(KC_8),      LSFT(KC_RBRC),    LSFT(KC_COMM), _______ },
-        { _______, _______,        LSFT(KC_LBRC),   LSFT(KC_INT1),     LSFT(KC_3),       LSFT(KC_6),       _______ },
-        { _______, _______, _______ ,         _______,         _______,          _______,          _______ },
-        { _______ , _______,        _______,         _______,         _______, _______ , _______ },
-        { _______ , LSFT(KC_2),     KC_MINS,         KC_NUBS,         LSFT(KC_BSLS),    KC_QUOT,          _______ },
-        { _______ , LSFT(KC_DOT),   LSFT(KC_NUHS),   LSFT(KC_9),      KC_NUHS,          KC_EQL,           LSFT(KC_4) },
-        { _______, KC_EQL,         KC_LBRC,         LSFT(KC_SLSH),   KC_LEFT,          KC_UP,            _______ },
-        { _______, _______,        _______,         _______, _______ ,          KC_DOWN,          KC_RGHT },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, CYC3, CYC4, CYC1, CYC7, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, CYC8, CYC2, CYC5, CYC6, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
     },
-    // 4〜11 は全て透過。クリックやCPIキー、ジェスチャー/TDGの動作などは Vial から割り当てる
-    [L_MOUSE]     = TRNS_LAYER,
-    [L_SPARE5]    = TRNS_LAYER,
-    [L_PRECISE]   = TRNS_LAYER,
-    [L_GESTURE]   = TRNS_LAYER,
-    [L_TDG_TAP]   = TRNS_LAYER,
-    [L_TDG_HOLD]  = TRNS_LAYER,
-    [L_TDG_DTAP]  = TRNS_LAYER,
-    [L_TDG_DHOLD] = TRNS_LAYER,
+    [L_MOUSE] = {
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, KC_BTN2, KC_BTN1, KC_BTN3, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, BALL_SCROLL, _______, _______, _______, _______ },
+        { _______, _______, KC_WH_U, _______, _______, _______, _______ },
+        { _______, KC_WH_L, KC_WH_D, KC_WH_R, _______, SCRL_UP, CPI_UP },
+        { _______, KC_BTN1, KC_BTN2, KC_BTN3, _______, SCRL_DN, CPI_DN },
+        { KC_BTN3, _______, _______, _______, _______, _______, _______ },
+        { KC_BTN1, KC_BTN2, _______, _______, BALL_MOUSE, _______, _______ },
+    },
+    [L_SPARE5] = {
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+    },
+    [L_PRECISE] = {
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+    },
+    [L_GESTURE] = {
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+    },
+    [L_TDG_TAP] = {
+        { KC_ESC, _______, KC_2, KC_3, KC_4, KC_5, _______ },
+        { KC_GRV, KC_1, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, KC_6, KC_7, KC_8, KC_9, _______, _______ },
+        { _______, _______, _______, _______, _______, KC_0, KC_BSPC },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+    },
+    [L_TDG_HOLD] = {
+        { _______, _______, KC_F2, KC_F3, KC_F4, KC_F5, _______ },
+        { _______, KC_F1, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, KC_F6, KC_F7, KC_F8, KC_F9, _______, _______ },
+        { _______, _______, _______, _______, _______, KC_F10, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+    },
+    [L_TDG_DTAP] = {
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+    },
+    [L_TDG_DHOLD] = {
+        { QK_MACRO_0, _______, KC_F12, _______, _______, _______, _______ },
+        { QK_MACRO_1, KC_F11, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, KC_DEL },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+        { _______, _______, _______, _______, _______, _______, _______ },
+    },
 };
 
 
@@ -699,15 +787,21 @@ static tdg_t *tdg_find(keypos_t pos, uint8_t state) {
     return NULL;
 }
 
+// キーコードの出力: Vial標準の仕組み(タップダンスの動作と同じ)で、あらゆるキーコード
+//   (文字・修飾・マクロ・レイヤー切替・マウス・カスタムキーなど)を出せる
+static void kc_down(uint16_t kc) { vial_keycode_down(kc); }
+static void kc_up(uint16_t kc) { vial_keycode_up(kc); }
+static void kc_tap(uint16_t kc) { vial_keycode_tap(kc); }
+
 static void tdg_tap(uint16_t kc) {
     if (kc != KC_NO) {
-        tap_code16(kc);
+        kc_tap(kc);
     }
 }
 
 static void tdg_hold(tdg_t *t, uint16_t kc) {
     if (kc != KC_NO) {
-        register_code16(kc);
+        kc_down(kc);
         t->held  = kc;
         t->state = TDG_HELD;
     } else {
@@ -757,7 +851,7 @@ static void tdg_press(keypos_t pos) {
 static void tdg_release(keypos_t pos) {
     tdg_t *t = tdg_find(pos, TDG_HELD);
     if (t) {
-        unregister_code16(t->held);
+        kc_up(t->held);
         t->state = TDG_FREE;
         return;
     }
@@ -1562,7 +1656,7 @@ static void scroll_axis_only(ball_t *b, int16_t *x, int16_t *y) {
 static void gesture_emit(bool fast, uint8_t dir) {
     uint16_t kc = vk_lookup_key(vk_gesture[fast ? 1 : 0][dir]);
     if (kc > KC_TRNS) {
-        tap_code16(kc);
+        kc_tap(kc);
     }
 }
 
@@ -1634,6 +1728,100 @@ static void gesture_apply(ball_t *b, int16_t x, int16_t y) {
 }
 
 /* ------------------------------------------------------------------
+ * 両ボール同時操作(常時有効)
+ *   左右のボールが同時に動いたとき(それぞれの機能は止めて)次の操作として扱う:
+ *     左右が離れる/寄る(左を左・右を右 / 左を右・右を左) → Ctrl+ホイールで拡大/縮小
+ *     同時に上 または 同時に左 → Home      同時に下 または 同時に右 → End
+ * ------------------------------------------------------------------ */
+#define JOINT_WINDOW_MS 100 // この時間以内に両方動いたら「同時」
+#define JOINT_MIN 10        // 同時と見なすのに必要な、各ボールの移動量
+#define JOINT_IDLE_MS 200   // 両方がこの時間止まったら操作の終わり
+#define JOINT_DECIDE 60     // 向きの判定に必要な移動量(合計)
+#define JOINT_ZOOM_STEP 30  // ホイール1目盛りぶんの、左右の離れ具合
+enum { JT_NONE = 0, JT_ZOOM, JT_DONE };
+
+static struct {
+    int32_t  a[2][2]; // [ボール][x,y] の累積
+    uint32_t last[2];
+    bool     active;
+    uint8_t  type;
+    int32_t  zacc;
+    bool     ctrl;
+} joint;
+
+static void joint_reset(void) {
+    memset(joint.a, 0, sizeof(joint.a));
+    joint.active = false;
+    joint.type   = JT_NONE;
+    joint.zacc   = 0;
+    if (joint.ctrl) {
+        unregister_code(KC_LCTL);
+        joint.ctrl = false;
+    }
+}
+
+// x[2], y[2]: 各ボールの移動量。返り値: 同時操作中か。*wheel にホイール量を返す
+static bool joint_update(const int16_t *x, const int16_t *y, int8_t *wheel) {
+    uint32_t now = timer_read32();
+    *wheel       = 0;
+    for (uint8_t i = 0; i < 2; i++) {
+        if (x[i] || y[i]) {
+            if (!joint.active && TIMER_DIFF_32(now, joint.last[i]) > JOINT_WINDOW_MS) {
+                joint.a[i][0] = joint.a[i][1] = 0;
+            }
+            joint.a[i][0] += x[i];
+            joint.a[i][1] += y[i];
+            joint.last[i] = now;
+        }
+    }
+    if (!joint.active) {
+        bool both = true;
+        for (uint8_t i = 0; i < 2; i++) {
+            both = both && TIMER_DIFF_32(now, joint.last[i]) <= JOINT_WINDOW_MS && (abs(joint.a[i][0]) + abs(joint.a[i][1])) >= JOINT_MIN;
+        }
+        if (!both) {
+            return false;
+        }
+        joint.active = true;
+        joint.type   = JT_NONE;
+        joint.zacc   = 0;
+    }
+    if (TIMER_DIFF_32(now, joint.last[0]) > JOINT_IDLE_MS && TIMER_DIFF_32(now, joint.last[1]) > JOINT_IDLE_MS) {
+        joint_reset();
+        return false;
+    }
+    int32_t H = joint.a[0][0] + joint.a[1][0]; // 同じ向きの横
+    int32_t V = joint.a[0][1] + joint.a[1][1]; // 同じ向きの縦(下が+)
+    int32_t Z = joint.a[1][0] - joint.a[0][0]; // 離れる(+) / 寄る(-)
+    int32_t aH = abs(H), aV = abs(V), aZ = abs(Z);
+    if (joint.type == JT_NONE) {
+        int32_t m = aH > aV ? aH : aV;
+        if (aZ > m ? aZ >= JOINT_DECIDE : m >= JOINT_DECIDE) {
+            if (aZ > m) {
+                joint.type = JT_ZOOM;
+                if (!joint.ctrl) {
+                    register_code(KC_LCTL);
+                    joint.ctrl = true;
+                }
+                joint.zacc = Z; // 判定までの分も使う
+            } else {
+                bool home = (aH >= aV) ? (H < 0) : (V < 0);
+                kc_tap(home ? KC_HOME : KC_END);
+                joint.type = JT_DONE;
+            }
+        }
+    } else if (joint.type == JT_ZOOM) {
+        joint.zacc += x[1] - x[0];
+    }
+    if (joint.type == JT_ZOOM) {
+        int32_t st = joint.zacc / JOINT_ZOOM_STEP;
+        joint.zacc -= st * JOINT_ZOOM_STEP;
+        *wheel = clamp8((int16_t)st);
+    }
+    return true;
+}
+
+/* ------------------------------------------------------------------
  * トラックボール処理
  *   各ボールを、設定された動作(マウス / スクロール / ジェスチャー)で処理する
  * ------------------------------------------------------------------ */
@@ -1650,13 +1838,28 @@ report_mouse_t pointing_device_task_combined_user(report_mouse_t left_report, re
         lockout_active = false;
     }
 
+    // ---- 軸の向き(回転・反転) ----
+    int16_t xs[2], ys[2];
     for (uint8_t i = 0; i < 2; i++) {
-        ball_t *b    = &ball[i];
-        bool    left = (i == 0);
-        int16_t x = out[i].x, y = out[i].y;
+        bool left = (i == 0);
+        xs[i] = out[i].x;
+        ys[i] = out[i].y;
+        orient_apply(&xs[i], &ys[i], left ? cfg.rot_left : cfg.rot_right, cfg.invert_flags & (left ? INV_LX : INV_RX), cfg.invert_flags & (left ? INV_LY : INV_RY), &ball[i].rot);
+    }
+    // ---- 両ボール同時操作(拡大縮小 / Home / End) ----
+    int8_t jwheel = 0;
+    bool   joint_on = joint_update(xs, ys, &jwheel);
+    if (joint_on) {
+        for (uint8_t i = 0; i < 2; i++) {
+            out[i].x = out[i].y = out[i].h = out[i].v = 0;
+        }
+        out[1].v = jwheel;
+        return pointing_device_combine_reports(out[0], out[1]);
+    }
 
-        // ---- 軸の向き(回転・反転) ----
-        orient_apply(&x, &y, left ? cfg.rot_left : cfg.rot_right, cfg.invert_flags & (left ? INV_LX : INV_RX), cfg.invert_flags & (left ? INV_LY : INV_RY), &b->rot);
+    for (uint8_t i = 0; i < 2; i++) {
+        ball_t *b = &ball[i];
+        int16_t x = xs[i], y = ys[i];
 
         // ---- 自動レイヤー切替(ボールごとに番号を設定) ----
         bool trig = activity_update(&b->act, x, y);
