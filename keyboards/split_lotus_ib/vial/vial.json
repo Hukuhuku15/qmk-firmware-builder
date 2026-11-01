@@ -1186,16 +1186,29 @@
                             ]
                         },
                         {
-                            "label": "最大倍率(%) 高速時の倍率。100で加速なし",
+                            "label": "低速倍率(%) 遅い動きの倍率。100で等倍 / 小さいほど細かく動かせる",
                             "type": "range",
                             "options": [
-                                100,
-                                500
+                                10,
+                                100
                             ],
                             "content": [
-                                "id_accel_max_gain",
+                                "id_accel_min_gain",
                                 0,
-                                6
+                                44
+                            ]
+                        },
+                        {
+                            "label": "加速を始める速さ(カウント/秒) これ以下は低速倍率のまま",
+                            "type": "range",
+                            "options": [
+                                0,
+                                3000
+                            ],
+                            "content": [
+                                "id_accel_low_speed",
+                                0,
+                                8
                             ]
                         },
                         {
@@ -1212,20 +1225,7 @@
                             ]
                         },
                         {
-                            "label": "加速を始める速さ(カウント/秒) これ以下は等倍",
-                            "type": "range",
-                            "options": [
-                                0,
-                                3000
-                            ],
-                            "content": [
-                                "id_accel_low_speed",
-                                0,
-                                8
-                            ]
-                        },
-                        {
-                            "label": "最大倍率に達する速さ(カウント/秒)",
+                            "label": "中速の最大倍率に達する速さ(カウント/秒)",
                             "type": "range",
                             "options": [
                                 500,
@@ -1235,6 +1235,54 @@
                                 "id_accel_high_speed",
                                 0,
                                 9
+                            ]
+                        },
+                        {
+                            "label": "中速の最大倍率(%) 「最大倍率に達する速さ」での倍率",
+                            "type": "range",
+                            "options": [
+                                100,
+                                500
+                            ],
+                            "content": [
+                                "id_accel_max_gain",
+                                0,
+                                6
+                            ]
+                        },
+                        {
+                            "label": "フリック(ON:中速の先も頭打ちにせず、強く弾くとさらに大きく飛ばす)",
+                            "type": "toggle",
+                            "content": [
+                                "id_flick_enable",
+                                0,
+                                40
+                            ]
+                        },
+                        {
+                            "label": "弾きの最大倍率に達する速さ(カウント/秒) 高いほど強く弾かないと最大にならない",
+                            "type": "range",
+                            "options": [
+                                1000,
+                                20000
+                            ],
+                            "content": [
+                                "id_flick_speed",
+                                0,
+                                41
+                            ]
+                        },
+                        {
+                            "label": "弾きの最大倍率(%) 大きいほど遠くへ飛ぶ(1200=12倍)",
+                            "type": "range",
+                            "options": [
+                                100,
+                                6000
+                            ],
+                            "content": [
+                                "id_flick_gain",
+                                0,
+                                42
                             ]
                         }
                     ]
@@ -2078,7 +2126,7 @@
                             ]
                         },
                         {
-                            "label": "ゆっくり: 1回の打鍵に必要な移動量(カウント) 小さいほど連続入力が速い",
+                            "label": "ゆっくり: 1回目の出力に必要な移動量(カウント)",
                             "type": "range",
                             "options": [
                                 5,
@@ -2088,6 +2136,45 @@
                                 "id_gesture_step_slow",
                                 0,
                                 35
+                            ]
+                        },
+                        {
+                            "label": "ゆっくり: 連続入力が始まるまでの追加距離(カウント) 大きいほど1回だけ出しやすい",
+                            "type": "range",
+                            "options": [
+                                0,
+                                255
+                            ],
+                            "content": [
+                                "id_gesture_delay",
+                                0,
+                                45
+                            ]
+                        },
+                        {
+                            "label": "ゆっくり: 連続入力1回の移動量(カウント) 回転が遅いとき",
+                            "type": "range",
+                            "options": [
+                                5,
+                                255
+                            ],
+                            "content": [
+                                "id_gesture_rep_slow",
+                                0,
+                                46
+                            ]
+                        },
+                        {
+                            "label": "ゆっくり: 連続入力1回の移動量(カウント) 回転が速いとき(「速い」の境目の速さ)",
+                            "type": "range",
+                            "options": [
+                                5,
+                                255
+                            ],
+                            "content": [
+                                "id_gesture_rep_fast",
+                                0,
+                                47
                             ]
                         },
                         {
