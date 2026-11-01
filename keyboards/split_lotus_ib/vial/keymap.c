@@ -154,7 +154,13 @@ typedef struct __attribute__((packed)) {
     uint8_t  pick_sel[PICK_ITEMS];             // 記号ピッカーの選択キー(sel_table の番号)
     uint8_t  pick_sym[PICK_SETS][PICK_ITEMS];  // 記号ピッカーの記号(sym_table の番号。0=なし)
     uint8_t  cyc_sym[CYC_KEYS][CYC_MAX];       // 切替入力の記号(sym_table の番号。0=ここで終わり)
-    uint8_t  reserved[8];
+    uint8_t  flick_enable;     // フリック(強く弾いたときに大きく飛ばす) on/off
+    uint16_t flick_speed;      // この速さ(カウント/秒)以上で「弾いた」と判定
+    uint16_t flick_gain;       // 弾いている間の倍率(%)
+    uint8_t  accel_min_gain;   // 低速時の倍率(%)。100=等倍 / 小さいほど遅い動きを細かくする
+    uint8_t  gesture_delay;    // ゆっくりジェスチャー: 1回目の出力のあと、連続入力が始まるまでの追加距離(カウント)
+    uint8_t  gesture_rep_slow; // ゆっくりジェスチャー: 連続入力1回に必要な移動量(カウント) 回転が遅いとき
+    uint8_t  gesture_rep_fast; // 同 回転が「速い」しきい値に近いとき
 } trackball_cfg_t;
 
 #define INV_LX        0x01 // 左ボール X反転
@@ -263,7 +269,7 @@ static void cfg_defaults(void) {
         .cpi_index        = 1,
         .scroll_index     = 4, // = 分周10(従来の固定値と同じ)
         .accel_enable     = 1,
-        .accel_curve      = 30,
+        .accel_curve      = 20,
         .precision_div    = 4,
         .precision_lock   = 1,
         // 左右入れ替えなし。左ボールのX/Y反転のみON、右ボールは反転なし
@@ -272,9 +278,16 @@ static void cfg_defaults(void) {
         .rot_right        = 18, // 90度
         .cpi_q            = {16, 21, 26, 32, 42, 53, 63}, // 608 / 798 / 988 / 1216 / 1596 / 2014 / 2394
         .scroll_div       = {80, 48, 30, 18, 10, 6, 4},
-        .accel_max_gain   = 500,
-        .accel_low_speed  = 495,
-        .accel_high_speed = 2398,
+        .accel_max_gain   = 300,
+        .accel_low_speed  = 300,
+        .accel_high_speed = 2000,
+        .flick_enable     = 1,
+        .flick_speed      = 5000, // 5000カウント/秒で倍率が最大になる
+        .flick_gain       = 1200, // 12倍
+        .accel_min_gain   = 70,   // 低速は0.7倍
+        .gesture_delay    = 150,
+        .gesture_rep_slow = 200,
+        .gesture_rep_fast = 60,
         .straight_angle   = 1,   // 1度以内なら軸に揃える
         .straight_window  = 30,  // 30ms分の動きで判定
         .straight_lock    = 25,  // 250msロックしたら再判定
@@ -325,6 +338,14 @@ static void cfg_sanitize(void) {
     if (cfg.precision_div > 16) cfg.precision_div = 16;
     if (cfg.accel_max_gain < 100) cfg.accel_max_gain = 100;
     if (cfg.accel_max_gain > 500) cfg.accel_max_gain = 500;
+    if (cfg.flick_speed < 1000) cfg.flick_speed = 1000;
+    if (cfg.flick_speed > 20000) cfg.flick_speed = 20000;
+    if (cfg.flick_gain < 100) cfg.flick_gain = 100;
+    if (cfg.flick_gain > 6000) cfg.flick_gain = 6000;
+    if (cfg.accel_min_gain < 10) cfg.accel_min_gain = 10;
+    if (cfg.accel_min_gain > 100) cfg.accel_min_gain = 100;
+    if (cfg.gesture_rep_slow < 5) cfg.gesture_rep_slow = 5;
+    if (cfg.gesture_rep_fast < 5) cfg.gesture_rep_fast = 5;
     if (cfg.accel_high_speed <= cfg.accel_low_speed) cfg.accel_high_speed = cfg.accel_low_speed + 1;
     if (cfg.rot_left >= 72) cfg.rot_left = 0;
     if (cfg.rot_right >= 72) cfg.rot_right = 0;
@@ -648,6 +669,8 @@ typedef struct {
     uint32_t accel_win_start, accel_win_sum;
     int32_t  accel_gain_q10; // 倍率(1024 = 1.0)
     int32_t  accel_frac_x, accel_frac_y;
+    // マウス: フリック(弾き)
+    int32_t  ovf_x, ovf_y; // 1回の報告で送り切れなかった移動量(±127超え)を次へ持ち越す
     // マウス: 最終倍率
     int32_t  scale_frac_x, scale_frac_y;
     // マウス: 精密レイヤー
@@ -664,6 +687,7 @@ typedef struct {
     uint32_t g_last_motion, g_spd_start;
     bool     g_fast_done; // 速いジェスチャーで1回打鍵済み(動きが止まるまで追加の打鍵をしない)
     uint32_t g_spd_sum, g_spd; // 直近の速さ(カウント/秒)
+    uint8_t  g_cnt, g_dir;     // ゆっくりジェスチャー: この動きで出した回数(0,1,2以上) / 最後に出した方向
 } ball_t;
 
 static ball_t ball[2];
@@ -1420,17 +1444,29 @@ static uint32_t pow_q15(uint32_t t, uint8_t c10) {
 }
 
 static int32_t accel_calc_gain_q10(uint32_t speed) {
-    if (!cfg.accel_enable || speed <= cfg.accel_low_speed) {
+    if (!cfg.accel_enable) {
         return 1024;
     }
-    uint32_t t;
-    if (speed >= cfg.accel_high_speed) {
-        t = 32768;
-    } else {
-        t = ((speed - cfg.accel_low_speed) << 15) / (cfg.accel_high_speed - cfg.accel_low_speed);
+    int64_t gmin = ((int32_t)cfg.accel_min_gain * 1024) / 100;
+    int64_t gmid = ((int32_t)cfg.accel_max_gain * 1024) / 100;
+    if (speed <= cfg.accel_low_speed) {
+        return gmin;
     }
-    int32_t max_q10 = ((int32_t)cfg.accel_max_gain * 1024) / 100;
-    return 1024 + (((max_q10 - 1024) * (int32_t)pow_q15(t, cfg.accel_curve)) >> 15);
+    if (speed < cfg.accel_high_speed) { // 低速 → 中速: 低速倍率 から 中速の最大倍率 へ(カーブ)
+        int64_t t = ((int64_t)(speed - cfg.accel_low_speed) << 15) / (cfg.accel_high_speed - cfg.accel_low_speed);
+        return gmin + (((gmid - gmin) * (int64_t)pow_q15((uint32_t)t, cfg.accel_curve)) >> 15);
+    }
+    if (!cfg.flick_enable || cfg.flick_speed <= cfg.accel_high_speed) {
+        return gmid;
+    }
+    // 中速 → 高速(弾き): 中速の最大倍率 から 弾きの倍率 へ、なめらかに(頭打ちで折れない)
+    int64_t gfl = ((int32_t)cfg.flick_gain * 1024) / 100;
+    if (speed >= cfg.flick_speed) {
+        return gfl;
+    }
+    int64_t t = ((int64_t)(speed - cfg.accel_high_speed) << 15) / (cfg.flick_speed - cfg.accel_high_speed);
+    int64_t sm = (((t * t) >> 15) * (3 * 32768 - 2 * t)) >> 15; // smoothstep
+    return gmid + (((gfl - gmid) * sm) >> 15);
 }
 
 // 移動量から速さを更新し、倍率を適用する
@@ -1442,7 +1478,9 @@ static void accel_apply(ball_t *b, int16_t *x, int16_t *y) {
     uint32_t now = timer_read32();
     uint32_t dt  = TIMER_DIFF_32(now, b->accel_win_start);
     if (dt >= ACCEL_WINDOW_MS) {
-        b->accel_gain_q10  = accel_calc_gain_q10((b->accel_win_sum * 1000) / dt);
+        uint32_t spd    = (b->accel_win_sum * 1000) / dt;
+        int32_t  target = accel_calc_gain_q10(spd);
+        b->accel_gain_q10 = (b->accel_gain_q10 + target) / 2; // 窓ごとの急な変化をならす
         b->accel_win_sum   = 0;
         b->accel_win_start = now;
     }
@@ -1665,6 +1703,8 @@ static void gesture_apply(ball_t *b, int16_t x, int16_t y) {
     if (TIMER_DIFF_32(now, b->g_last_motion) > GESTURE_IDLE_MS) {
         b->g_x = b->g_y = 0;
         b->g_fast_done  = false;
+        b->g_cnt        = 0;
+        b->g_dir        = 0xFF;
         b->g_spd        = 0;
         b->g_spd_sum    = 0;
         b->g_spd_start  = now;
@@ -1699,14 +1739,35 @@ static void gesture_apply(ball_t *b, int16_t x, int16_t y) {
     if (gy < -32000) gy = -32000;
     for (uint8_t n = 0; n < GESTURE_MAX_EMIT; n++) {
         bool     fast = spd >= (uint32_t)cfg.gesture_speed * 10;
-        int32_t  step = fast ? cfg.gesture_step_fast : cfg.gesture_step_slow;
         // 方向: 動きの向きで4分割(上=0°として 315°〜45°=上 / 45°〜135°=右 / 135°〜225°=下 / 225°〜315°=左。
         //       ちょうど45°ちょうどは左右)。距離: 斜めでも損しないよう、ベクトルの長さ(近似)で測る
         int32_t  ax    = abs(gx), ay = abs(gy);
         bool     horiz = ax >= ay;
         int32_t  mag   = horiz ? ax + (ay * 3) / 8 : ay + (ax * 3) / 8;
+        uint8_t  dir   = horiz ? (gx > 0 ? 3 : 2) : (gy > 0 ? 1 : 0);
+        if (dir != b->g_dir) {
+            b->g_cnt = 0; // 向きが変わったら、また「1回目」から
+        }
+        int32_t step;
+        if (fast) {
+            step = cfg.gesture_step_fast;
+        } else if (b->g_cnt == 0) {
+            step = cfg.gesture_step_slow; // 1回目の出力に必要な距離
+        } else {
+            // 連続入力: 回転が遅いほど1回に必要な距離を長く、速いほど短くする
+            uint32_t vh = (uint32_t)cfg.gesture_speed * 10;
+            uint32_t sp = spd < vh ? spd : vh;
+            step        = (int32_t)cfg.gesture_rep_slow + ((int32_t)cfg.gesture_rep_fast - (int32_t)cfg.gesture_rep_slow) * (int32_t)sp / (int32_t)vh;
+            if (b->g_cnt == 1) {
+                step += cfg.gesture_delay; // 連続入力が始まるまでの追加距離(1回だけ出したいときの余裕)
+            }
+        }
         if (mag < step) {
             break;
+        }
+        b->g_dir = dir;
+        if (!fast && b->g_cnt < 2) {
+            b->g_cnt++;
         }
         if (horiz) {
             gesture_emit(fast, gx > 0 ? 3 : 2);
@@ -1955,8 +2016,17 @@ report_mouse_t pointing_device_task_combined_user(report_mouse_t left_report, re
                 }
                 // 最終出力の倍率(精密レイヤー中も有効)
                 output_scale(b, &x, &y);
-                out[i].x = clamp8(x);
-                out[i].y = clamp8(y);
+                // 1回の報告は±127まで。超えた分は持ち越して、次の報告で送る
+                b->ovf_x += x;
+                b->ovf_y += y;
+                if (b->ovf_x > 20000) b->ovf_x = 20000;
+                if (b->ovf_x < -20000) b->ovf_x = -20000;
+                if (b->ovf_y > 20000) b->ovf_y = 20000;
+                if (b->ovf_y < -20000) b->ovf_y = -20000;
+                out[i].x = clamp8(b->ovf_x);
+                out[i].y = clamp8(b->ovf_y);
+                b->ovf_x -= out[i].x;
+                b->ovf_y -= out[i].y;
                 break;
             }
         }
@@ -2018,6 +2088,13 @@ enum trackball_value_id {
     id_tdg_term            = 37, // range 16bit (ms)
     id_gesture_fast_repeat = 38, // toggle: 速いジェスチャーも連続入力にする
     id_cyc_timeout         = 39, // range 16bit (ms) 0=自動確定しない
+    id_flick_enable        = 40, // toggle: フリック
+    id_flick_speed         = 41, // range 16bit (カウント/秒)
+    id_flick_gain          = 42, // range 16bit (%)
+    id_accel_min_gain      = 44, // range 8bit (%)
+    id_gesture_delay       = 45, // range 8bit (カウント)
+    id_gesture_rep_slow    = 46, // range 8bit (カウント)
+    id_gesture_rep_fast    = 47, // range 8bit (カウント)
     // 40〜63: 予備
     id_pick_sym_base       = 64,  // 64〜119: 記号ピッカー ①〜⑦ の1〜8番の記号 (64 + セット*8 + 番号) dropdown
     id_cyc_sym_base        = 128, // 128〜191: 切替入力 CYC1〜8 の1〜8番目の記号 (128 + キー*8 + 番号) dropdown
@@ -2216,6 +2293,32 @@ static void tb_set_value(uint8_t *d) {
             cfg.cyc_timeout = q > 255 ? 255 : q;
             break;
         }
+        case id_flick_enable:
+            cfg.flick_enable = v[0] ? 1 : 0;
+            break;
+        case id_flick_speed:
+            cfg.flick_speed = rd16(v);
+            cfg_sanitize();
+            break;
+        case id_flick_gain:
+            cfg.flick_gain = rd16(v);
+            cfg_sanitize();
+            break;
+        case id_accel_min_gain:
+            cfg.accel_min_gain = v[0];
+            cfg_sanitize();
+            break;
+        case id_gesture_delay:
+            cfg.gesture_delay = v[0];
+            break;
+        case id_gesture_rep_slow:
+            cfg.gesture_rep_slow = v[0];
+            cfg_sanitize();
+            break;
+        case id_gesture_rep_fast:
+            cfg.gesture_rep_fast = v[0];
+            cfg_sanitize();
+            break;
         case id_tdg_term: {
             uint16_t q = rd16(v) / 10;
             cfg.tdg_term = q > 255 ? 255 : q;
@@ -2370,6 +2473,27 @@ static void tb_get_value(uint8_t *d) {
             break;
         case id_cyc_timeout:
             wr16(v, (uint16_t)cfg.cyc_timeout * 10);
+            break;
+        case id_flick_enable:
+            wr8(v, cfg.flick_enable);
+            break;
+        case id_flick_speed:
+            wr16(v, cfg.flick_speed);
+            break;
+        case id_flick_gain:
+            wr16(v, cfg.flick_gain);
+            break;
+        case id_accel_min_gain:
+            wr8(v, cfg.accel_min_gain);
+            break;
+        case id_gesture_delay:
+            wr8(v, cfg.gesture_delay);
+            break;
+        case id_gesture_rep_slow:
+            wr8(v, cfg.gesture_rep_slow);
+            break;
+        case id_gesture_rep_fast:
+            wr8(v, cfg.gesture_rep_fast);
             break;
         case id_tdg_term:
             wr16(v, (uint16_t)cfg.tdg_term * 10);
