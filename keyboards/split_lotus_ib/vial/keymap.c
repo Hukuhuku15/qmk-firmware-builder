@@ -763,13 +763,14 @@ static bool key_keeps_auto_layer(uint16_t keycode, keyrecord_t *record) {
     if (IS_MODIFIER_KEYCODE(keycode)) {
         return true;
     }
-    // モッドタップ/レイヤータップ: ホールド扱いなら維持、タップ(文字入力)なら解除
-    if (IS_QK_MOD_TAP(keycode) || IS_QK_LAYER_TAP(keycode)) {
-        return record->tap.count == 0;
+    // レイヤー切替キー(MO/TT/TG/TO/LT など): 自動レイヤーを抜けてから切り替える
+    //   (抜けないと、自動レイヤーの割り当てが切替先のレイヤーを隠してしまう)
+    if (IS_QK_MOMENTARY(keycode) || IS_QK_TOGGLE_LAYER(keycode) || IS_QK_LAYER_TAP_TOGGLE(keycode) || IS_QK_LAYER_TAP(keycode) || IS_QK_TO(keycode) || IS_QK_DEF_LAYER(keycode)) {
+        return false;
     }
-    // レイヤー切替キー
-    if (IS_QK_MOMENTARY(keycode) || IS_QK_TOGGLE_LAYER(keycode) || IS_QK_LAYER_TAP_TOGGLE(keycode)) {
-        return true;
+    // モッドタップ: ホールド扱いなら維持、タップ(文字入力)なら解除
+    if (IS_QK_MOD_TAP(keycode)) {
+        return record->tap.count == 0;
     }
     // 自動/精密レイヤー上に置いたキー(Vialで割り当てたクリック等)
     keypos_t pos = record->event.key;
@@ -823,8 +824,17 @@ static void tdg_tap(uint16_t kc) {
     }
 }
 
-static void tdg_hold(tdg_t *t, uint16_t kc) {
-    if (kc != KC_NO) {
+// 文字・数字・記号などのキー(Ctrl+C のような修飾つきも含む)か。修飾キー単体・レイヤー・マウス等は false
+static bool kc_is_plain_key(uint16_t kc) {
+    return kc <= QK_MODS_MAX && (kc & 0xFF) >= KC_A && (kc & 0xFF) < KC_LCTL;
+}
+
+// once=true: 長押しに割り当てた文字キーは、押しっぱなしにせず1回だけ出す(OSのキーリピートで連続入力になるのを防ぐ)
+static void tdg_hold(tdg_t *t, uint16_t kc, bool once) {
+    if (kc != KC_NO && once && kc_is_plain_key(kc)) {
+        kc_tap(kc);
+        t->state = TDG_FREE;
+    } else if (kc != KC_NO) {
         kc_down(kc);
         t->held  = kc;
         t->state = TDG_HELD;
@@ -865,7 +875,7 @@ static void tdg_press(keypos_t pos) {
     bool has_dtap  = tdg_kc(pos, L_TDG_DTAP) != KC_NO;
     bool has_dhold = tdg_kc(pos, L_TDG_DHOLD) != KC_NO;
     if (!has_hold && !has_dtap && !has_dhold) {
-        tdg_hold(t, tdg_kc(pos, L_TDG_TAP)); // 普通のキーと同じ(待たない)
+        tdg_hold(t, tdg_kc(pos, L_TDG_TAP), false); // 普通のキーと同じ(待たない)
     } else {
         t->state = TDG_PRESS1;
         t->timer = timer_read32();
@@ -913,7 +923,7 @@ static void tdg_task(void) {
         switch (t->state) {
             case TDG_PRESS1: { // 押しっぱなし = 長押し(空ならタップのキーを押し続ける)
                 uint16_t hold = tdg_kc(t->pos, L_TDG_HOLD);
-                tdg_hold(t, hold != KC_NO ? hold : tdg_kc(t->pos, L_TDG_TAP));
+                tdg_hold(t, hold != KC_NO ? hold : tdg_kc(t->pos, L_TDG_TAP), hold != KC_NO);
                 break;
             }
             case TDG_WAIT2: // 2回目が来なかった = タップ
@@ -922,11 +932,12 @@ static void tdg_task(void) {
                 break;
             case TDG_PRESS2: { // 2回目が押しっぱなし = ダブルタップ長押し(空ならタップ+タップ押し続け)
                 uint16_t dhold = tdg_kc(t->pos, L_TDG_DHOLD);
+                bool     once  = dhold != KC_NO;
                 if (dhold == KC_NO) {
                     tdg_tap(tdg_kc(t->pos, L_TDG_TAP));
                     dhold = tdg_kc(t->pos, L_TDG_TAP);
                 }
-                tdg_hold(t, dhold);
+                tdg_hold(t, dhold, once);
                 break;
             }
         }
