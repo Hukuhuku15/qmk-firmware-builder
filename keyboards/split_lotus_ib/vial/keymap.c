@@ -843,12 +843,31 @@ static void tdg_hold(tdg_t *t, uint16_t kc, bool once) {
     }
 }
 
-// 次のタップ待ちのものを、今のキー(タップ)として確定する
+// 判定待ちのTDG(押している最中・次のタップ待ち)を、他のキーが押された時点で「タップ」として確定する
+//   (確定を待たせると、続けて打った文字が先に出てしまい、順番が入れ替わる: 例「sa」→「as」)
 static void tdg_flush_wait(void) {
     for (uint8_t i = 0; i < TDG_SLOTS; i++) {
-        if (tdg[i].state == TDG_WAIT2) {
-            tdg_tap(tdg_kc(tdg[i].pos, L_TDG_TAP));
-            tdg[i].state = TDG_FREE;
+        tdg_t *t = &tdg[i];
+        switch (t->state) {
+            case TDG_PRESS1: // まだ押している最中に、次のキーが来た = 打鍵(タップ)
+            case TDG_WAIT2:  // 次のタップ待ち中に別のキー = タップ
+                t->state = TDG_FREE; // 先に解放(出力中に process_record_user が再入しても二重に出さない)
+                tdg_tap(tdg_kc(t->pos, L_TDG_TAP));
+                break;
+            case TDG_PRESS2: { // 2回目を押している最中に、次のキーが来た = ダブルタップ
+                uint16_t dtap = tdg_kc(t->pos, L_TDG_DTAP);
+                uint16_t tap  = tdg_kc(t->pos, L_TDG_TAP);
+                t->state      = TDG_FREE;
+                if (dtap != KC_NO) {
+                    tdg_tap(dtap);
+                } else {
+                    tdg_tap(tap);
+                    tdg_tap(tap);
+                }
+                break;
+            }
+            default:
+                break;
         }
     }
 }
