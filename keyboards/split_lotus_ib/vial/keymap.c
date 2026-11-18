@@ -161,6 +161,7 @@ typedef struct __attribute__((packed)) {
     uint8_t  gesture_delay;    // ゆっくりジェスチャー: 1回目の出力のあと、連続入力が始まるまでの追加距離(カウント)
     uint8_t  gesture_rep_slow; // ゆっくりジェスチャー: 連続入力1回に必要な移動量(カウント) 回転が遅いとき
     uint8_t  gesture_rep_fast; // 同 回転が「速い」しきい値に近いとき
+    uint8_t  tdg_mod_term;     // TDGの長押しが修飾キー(Ctrl/Shift等)のときの長押し確定時間(×10ms)
 } trackball_cfg_t;
 
 #define INV_LX        0x01 // 左ボール X反転
@@ -305,6 +306,7 @@ static void cfg_defaults(void) {
         .gesture_step_fast = 127,
         .gesture_fast_repeat = 1,
         .tdg_term         = 20,  // 200ms
+        .tdg_mod_term     = 12,  // 120ms
         .cyc_timeout      = 80,  // 800ms
     };
     cfg = d;
@@ -369,6 +371,7 @@ static void cfg_sanitize(void) {
     if (cfg.gesture_step_slow < 5) cfg.gesture_step_slow = 5;
     if (cfg.gesture_step_fast < 5) cfg.gesture_step_fast = 5;
     if (cfg.tdg_term < 5) cfg.tdg_term = 5;
+    if (cfg.tdg_mod_term < 5 || cfg.tdg_mod_term > 100) cfg.tdg_mod_term = 12;
     for (uint8_t i = 0; i < PICK_ITEMS; i++) {
         if (cfg.pick_sel[i] >= SEL_COUNT) cfg.pick_sel[i] = 0;
         for (uint8_t st = 0; st < PICK_SETS; st++) {
@@ -825,6 +828,14 @@ static void tdg_tap(uint16_t kc) {
 }
 
 // 文字・数字・記号などのキー(Ctrl+C のような修飾つきも含む)か。修飾キー単体・レイヤー・マウス等は false
+// 修飾キー単体(KC_LCTL〜KC_RGUI)、または修飾キー付きのキー(Ctrl+C など)
+static bool kc_is_mod_hold(uint16_t kc) {
+    if (kc >= KC_LCTL && kc <= KC_RGUI) {
+        return true;
+    }
+    return kc != KC_NO && kc <= QK_MODS_MAX && (kc & 0x1F00) != 0;
+}
+
 static bool kc_is_plain_key(uint16_t kc) {
     return kc <= QK_MODS_MAX && (kc & 0xFF) >= KC_A && (kc & 0xFF) < KC_LCTL;
 }
@@ -933,10 +944,19 @@ static void tdg_release(keypos_t pos) {
 }
 
 static void tdg_task(void) {
-    uint32_t term = (uint32_t)cfg.tdg_term * 10;
+    uint32_t base_term = (uint32_t)cfg.tdg_term * 10;
     for (uint8_t i = 0; i < TDG_SLOTS; i++) {
         tdg_t *t = &tdg[i];
-        if (t->state == TDG_FREE || t->state == TDG_HELD || timer_elapsed32(t->timer) < term) {
+        if (t->state == TDG_FREE || t->state == TDG_HELD) {
+            continue;
+        }
+        uint32_t term = base_term;
+        // 長押しが修飾キー(Ctrl/Shift等)なら、長押しの確定だけ早める
+        if (t->state == TDG_PRESS1 && kc_is_mod_hold(tdg_kc(t->pos, L_TDG_HOLD))) {
+            uint32_t m = (uint32_t)cfg.tdg_mod_term * 10;
+            if (m < term) term = m;
+        }
+        if (timer_elapsed32(t->timer) < term) {
             continue;
         }
         switch (t->state) {
@@ -2125,6 +2145,7 @@ enum trackball_value_id {
     id_gesture_delay       = 45, // range 8bit (カウント)
     id_gesture_rep_slow    = 46, // range 8bit (カウント)
     id_gesture_rep_fast    = 47, // range 8bit (カウント)
+    id_tdg_mod_term        = 48, // range 16bit (ms) 修飾キー長押しの確定時間
     // 40〜63: 予備
     id_pick_sym_base       = 64,  // 64〜119: 記号ピッカー ①〜⑦ の1〜8番の記号 (64 + セット*8 + 番号) dropdown
     id_cyc_sym_base        = 128, // 128〜191: 切替入力 CYC1〜8 の1〜8番目の記号 (128 + キー*8 + 番号) dropdown
@@ -2349,6 +2370,12 @@ static void tb_set_value(uint8_t *d) {
             cfg.gesture_rep_fast = v[0];
             cfg_sanitize();
             break;
+        case id_tdg_mod_term: {
+            uint16_t q = rd16(v) / 10;
+            cfg.tdg_mod_term = q > 100 ? 100 : q;
+            cfg_sanitize();
+            break;
+        }
         case id_tdg_term: {
             uint16_t q = rd16(v) / 10;
             cfg.tdg_term = q > 255 ? 255 : q;
@@ -2524,6 +2551,9 @@ static void tb_get_value(uint8_t *d) {
             break;
         case id_gesture_rep_fast:
             wr8(v, cfg.gesture_rep_fast);
+            break;
+        case id_tdg_mod_term:
+            wr16(v, (uint16_t)cfg.tdg_mod_term * 10);
             break;
         case id_tdg_term:
             wr16(v, (uint16_t)cfg.tdg_term * 10);
