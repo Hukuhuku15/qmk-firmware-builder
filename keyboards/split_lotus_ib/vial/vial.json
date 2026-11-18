@@ -2216,6 +2216,19 @@
                                 0,
                                 37
                             ]
+                        },
+                        {
+                            "label": "長押しが修飾キー(Ctrl/Shift等)のときの確定時間(ms)",
+                            "type": "range",
+                            "options": [
+                                50,
+                                500
+                            ],
+                            "content": [
+                                "id_tdg_mod_term",
+                                0,
+                                48
+                            ]
                         }
                     ]
                 },
