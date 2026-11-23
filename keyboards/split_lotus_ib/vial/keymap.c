@@ -828,12 +828,29 @@ static void tdg_tap(uint16_t kc) {
 }
 
 // 文字・数字・記号などのキー(Ctrl+C のような修飾つきも含む)か。修飾キー単体・レイヤー・マウス等は false
-// 修飾キー単体(KC_LCTL〜KC_RGUI)、または修飾キー付きのキー(Ctrl+C など)
+// 修飾キー単体(KC_LCTL〜KC_RGUI)のみ。Ctrl+C など修飾キー付きのキーは対象外
 static bool kc_is_mod_hold(uint16_t kc) {
-    if (kc >= KC_LCTL && kc <= KC_RGUI) {
-        return true;
+    return kc >= KC_LCTL && kc <= KC_RGUI;
+}
+
+/* 通常のタップ/ホールド判定(Vial の Tapping Term)を、特定のキーだけ短くする。
+ * Vial 側の get_tapping_term は上書きできないので、リンカの --wrap(rules.mk)で
+ * qs_get_tapping_term を差し替えている。
+ * 早くするのは: モッドタップ(MT)・レイヤータップ(LT)・TT(n)。
+ * 時間は「TDGの修飾キー長押し」と共通の tdg_mod_term(Vialのメニューで変更)。 */
+uint16_t __real_qs_get_tapping_term(uint16_t keycode, keyrecord_t *record);
+uint16_t __wrap_qs_get_tapping_term(uint16_t keycode, keyrecord_t *record) {
+    uint16_t term = __real_qs_get_tapping_term(keycode, record);
+    bool fast = false;
+    // Quantumタブのタップ/ホールド系: モッドタップ(MT)・レイヤータップ(LT)・TT
+    if (IS_QK_MOD_TAP(keycode) || IS_QK_LAYER_TAP(keycode) || IS_QK_LAYER_TAP_TOGGLE(keycode)) {
+        fast = true;
     }
-    return kc != KC_NO && kc <= QK_MODS_MAX && (kc & 0x1F00) != 0;
+    if (fast) {
+        uint16_t m = (uint16_t)cfg.tdg_mod_term * 10;
+        if (m < term) term = m;
+    }
+    return term;
 }
 
 static bool kc_is_plain_key(uint16_t kc) {
