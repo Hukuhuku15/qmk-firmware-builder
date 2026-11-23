@@ -11,3 +11,6 @@ SRC += paw3222.c
 
 # paw3222.c を有効化(Auto-KDK の Web ビルドが付与しているフラグ相当)
 OPT_DEFS += -DAUTO_KDK_TRACKBALL_ENABLED
+
+# 特定キーだけ Tapping Term を短くするため、Vial の qs_get_tapping_term を差し替える(keymap.c)
+LDFLAGS += -Wl,--wrap=qs_get_tapping_term
