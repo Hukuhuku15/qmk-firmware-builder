@@ -2218,7 +2218,7 @@
                             ]
                         },
                         {
-                            "label": "長押しが修飾キー(Ctrl/Shift等)のときの確定時間(ms)",
+                            "label": "早めに確定する長押しの時間(ms) ※TDGの修飾キー/MT/LT/TT",
                             "type": "range",
                             "options": [
                                 50,
